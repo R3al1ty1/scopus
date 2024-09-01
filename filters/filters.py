@@ -1,1 +1,1 @@
-general_filter = lambda x : x.chat.username == "Parckes" or x.chat.username == "mikail_kryt" or x.chat.username == "sirtyler" or x.chat.username == 'iamk8' or x.chat.username == "OGLuckySaPer" or x.chat.username == "serhio_vsh"
+general_filter = lambda x : x.chat.username == "Parckes" or x.chat.username == "mikail_kryt" or x.chat.username == "sirtyler" or x.chat.username == 'iamk8' or x.chat.username == "OGLuckySaPer" or x.chat.username == "serhio_vsh" or x.chat.username == "ba1xo"

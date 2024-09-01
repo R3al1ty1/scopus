@@ -34,9 +34,9 @@ import time
 def build_query_by_dialog_data(query : dict):
     result = ""
     if (query['years'].split()[0] == query['years'].split()[1]):
-        result = result + query['query'] + f' AND PUBYEAR = {query['years'].split()[0]}'
+        result = result + query['query'] + f" AND PUBYEAR = {query['years'].split()[0]}"
     else:
-        result = result + query['query'] + f' AND PUBYEAR > {query['years'].split()[0]}' + f' AND PUBYEAR < {query['years'].split()[1]}'
+        result = result + query['query'] + f" AND PUBYEAR > {query['years'].split()[0]}" + f" AND PUBYEAR < {query['years'].split()[1]}"
 
     langs = []
     langs_str = ''

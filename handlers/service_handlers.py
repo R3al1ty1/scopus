@@ -94,7 +94,7 @@ async def process_start_command(message: Message):
 
 @router.message(Command(commands='support'), StateFilter(default_state), general_filter)
 async def process_start_command(message: Message):
-    await message.answer(text = "По всем вопросам, неполадкам и пожеланиям пишите сюда: @BEBEBBABABA ")
+    await message.answer(text = "По всем вопросам, неполадкам и пожеланиям пишите сюда: \nПо вопросам сотрудничества: @sirtyler @mikail_kryt \nПо техническим вопросам: @ba1xo ")
 
 
 # /balance    

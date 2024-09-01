@@ -1,41 +1,31 @@
+import logging
 import asyncio
-
 from aiogram import Bot, Dispatcher
+from aiogram.enums import ParseMode
+from aiogram.client.bot import DefaultBotProperties
 from config.config import Config, load_config
 from handlers import service_handlers, flow_handlers
 from dialogs import dialogs
-from aiogram.enums import ParseMode
-from aiogram.client.bot import DefaultBotProperties
-
 from aiogram_dialog import setup_dialogs
 
+logging.basicConfig(level=logging.INFO)
 
-def filter_by_stage(stage : int) -> bool :
-    a = 1
-    return True
-
-
-
-
-# Функция конфигурирования и запуска бота
 async def main() -> None:
-
-    # Загружаем конфиг в переменную config
     config: Config = load_config(".env")
+    async with Bot(token=config.tg_bot.token, default=DefaultBotProperties(parse_mode=ParseMode.HTML)) as bot:
+        dp = Dispatcher()
 
-    # Инициализируем бот и диспетчер
-    bot = Bot(token=config.tg_bot.token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher()
+        # Регистрируем роутеры
+        dp.include_router(service_handlers.router)
+        dp.include_router(flow_handlers.router)
+        dp.include_router(dialogs.main_menu)
 
-    dp.include_router(dialogs.main_menu)
-    dp.include_router(service_handlers.router)
-    dp.include_router(flow_handlers.router)
-    
-    setup_dialogs(dp)
+        # Настраиваем диалоги
+        setup_dialogs(dp)
 
-    # Пропускаем накопившиеся апдейты и запускаем polling
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+        # Пропускаем накопившиеся апдейты и запускаем polling
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
 
-
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
