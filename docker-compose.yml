@@ -8,5 +8,3 @@ services:
     restart: always
     volumes:
       - .:/app
-    environment:
-      - PYTHONUNBUFFERED=1

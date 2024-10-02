@@ -1,15 +1,23 @@
-# Используем официальный образ Python в качестве базового
-FROM python:3.10-slim
+FROM python:3.8-slim
 
-# Устанавливаем рабочую директорию в контейнере
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    libffi-dev \
+    libbz2-dev \
+    zlib1g-dev \
+    liblzma-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Копируем файл зависимостей и устанавливаем их
-COPY requirements.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt /app/
 
-# Копируем все файлы проекта в рабочую директорию контейнера
-COPY . .
+RUN pip install --upgrade pip setuptools
 
-# Определяем команду для запуска приложения
+RUN pip install -r requirements.txt
+
+COPY . /app
+
+
 CMD ["python", "main.py"]

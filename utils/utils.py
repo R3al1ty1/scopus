@@ -1,38 +1,30 @@
-from aiogram import Bot
-from aiogram.types import Message
 import asyncio
+import traceback
 
-
-from config.config import Config, load_config
-
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-
-from selenium.webdriver.firefox.firefox_binary import FirefoxBinary
-from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-
-from selenium.webdriver.support import expected_conditions as EC
-
-from selenium.webdriver.firefox.options import Options
+from selenium.common.exceptions import TimeoutException
 
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from bypass.CloudflareBypasser import CloudflareBypasser
 
-from bs4 import BeautifulSoup
 import pandas as pd
 import io
 import os
+import pyautogui
 import math
 import asyncio
-
+import DrissionPage
+from DrissionPage import ChromiumPage
+from DrissionPage.common import Actions
 
 import time
 
 
+project_dir = os.path.dirname(os.path.abspath(__file__))
+
+
 def build_query_by_dialog_data(query : dict):
     result = ""
+    html_content = ""
     if (query['years'].split()[0] == query['years'].split()[1]):
         result = result + query['query'] + f" AND PUBYEAR = {query['years'].split()[0]}"
     else:
@@ -67,10 +59,10 @@ def build_query_by_dialog_data(query : dict):
 #global warning AND PUBYEAR > 1971 AND PUBYEAR < 2026 AND ( LIMIT-TO ( LANGUAGE , "English" ) OR LIMIT-TO ( LANGUAGE , "Russian" ) ) AND ( LIMIT-TO ( DOCTYPE , "cp" ) OR LIMIT-TO ( DOCTYPE , "re" ) OR LIMIT-TO ( DOCTYPE , "ar" ) )
 
 def downloads_done(folder_id):
-    while not os.path.isfile(f"/home/pushlin/Desktop/scopus_files/{folder_id}/scopus.ris"):
-        # print(f"/home/pushlin/Desktop/scopus_files/{folder_id}/scopus.ris")
+    # Формируем относительный путь
+    relative_path = os.path.join(project_dir, 'scopus_files', str(folder_id), 'scopus.ris')
+    while not os.path.isfile(relative_path):
         time.sleep(5)
-        # print("sleep")
 
 
 #result = [нашлось или нет, кол-во, самые новые, самые старые, самые цитируемые]
@@ -79,37 +71,76 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
     text_query = build_query_by_dialog_data(query)
     num = '2500'
 
-    binary = FirefoxBinary("/usr/lib/firefox/firefox-bin")
-    profile = FirefoxProfile("/home/pushlin/.mozilla/firefox/n4kc09ho.default-release")
-    profile.set_preference("browser.download.folderList", 2)
-    profile.set_preference("browser.download.manager.showWhenStarting", False)
-    profile.set_preference("browser.download.dir", f"~/Desktop/scopus_files/{folder_id}")
-    profile.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/x-gzip")
+    # binary = FirefoxBinary("/Applications/Firefox.app/Contents/MacOS/firefox")
+    # profile = FirefoxProfile("/Users/user/scopus/scopus/jhue6pi8.default-release")
+    # profile.set_preference("browser.download.folderList", 2)
+    # profile.set_preference("browser.download.manager.showWhenStarting", False)
+    # profile.set_preference("browser.download.dir", f"~/Desktop/scopus_files/{folder_id}")
+    # profile.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/x-gzip")
 
+    # Add more preferences if needed
+    # browser = webdriver.Firefox(firefox_profile=profile, options=options, firefox_binary=binary)
 
-
-    browser = webdriver.Firefox(firefox_profile=profile, firefox_binary=binary)
-    profile.set_preference("browser.download.dir", '~/Desktop')
+    arguments = [
+        "-no-first-run",
+        "-force-color-profile=srgb",
+        "-metrics-recording-only",
+        "-password-store=basic",
+        "-use-mock-keychain",
+        "-export-tagged-pdf",
+        "-no-default-browser-check",
+        "-disable-background-mode",
+        "-enable-features=NetworkService,NetworkServiceInProcess,LoadCryptoTokenExtension,PermuteTLSExtensions",
+        "-disable-features=FlashDeprecationWarning,EnablePasswordsAccountStorage",
+        "-deny-permission-prompts",
+        "-disable-gpu",
+        "-accept-lang=en-US",
+    ]
 
     try:
-
+        browser = ChromiumPage()
+        ac = Actions(browser)
         browser.get('https://www.scopus.com/search/form.uri?display=advanced')
-
+        
+        cf_bypasser = CloudflareBypasser(browser)
+        cf_bypasser.bypass()
 
         time.sleep(3)
 
-        delay = 10   # seconds
-
-
-
-        # строка поиска
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '//*[@id="searchfield"]')))
-            print ("Page is ready!")
-        except TimeoutException:
-            print ("Loading took too much time!")
+            sign_in_button = browser('Sign in').click()
+            print("Sign-in button clicked")
+            time.sleep(10)
+            
+            browser.ele('@id:bdd-email').click()
+            browser.ele('@id:bdd-email').input('f1gl5d@tr.pte.hu')
+            pyautogui.typewrite('a')
+            pyautogui.press('backspace')
+            continue_button = browser('Continue').click()
+            time.sleep(5)
+            browser.ele('@id:bdd-password').input('miki00789')
+            ac.key_down('RETURN')
 
-        elem.send_keys(text_query + Keys.RETURN)
+            print("Email entered and submitted")
+            
+            print("Login successful")
+        except DrissionPage.errors.NoRectError:
+            try:
+                elem = browser.ele('@id:contentEditLabel')
+                print ("Page is ready!")
+            except TimeoutException:
+                print ("Loading took too much time!")
+        except Exception as e:
+            print('Error while logging in', e)
+            traceback.print_exc()
+
+        time.sleep(3)
+
+        try:
+            elem.input(text_query)
+            browser.ele('xpath://*[@id="advSearch"]/span[1]').click()
+        except TimeoutException:
+            print ("Error trying to get the results")
 
         result = []
 
@@ -117,7 +148,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
         
         time.sleep(6)
         try:
-            elem = browser.find_element(By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[1]/div[3]/div/div/div[1]/h2')
+            elem = browser.ele('xpath://*[@id="container"]/micro-ui/document-search-results-page/div[1]/section[1]/div[3]/div/div/div[1]/h2')
             result.append(True)
         except NoSuchElementException:
             print("net statey")
@@ -132,7 +163,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
     
     # choose show 50
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[2]/div/div/label/select/option[3]')))
+            elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[2]/div/div/label/select/option[3]')
             print ("Page is ready!")
         except TimeoutException:
             print ("Loading took too much time!")
@@ -142,7 +173,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
     
     # show all abstract
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/button/span')))
+            elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/button/span')
             print ("Page is ready!")
         except TimeoutException:
             print ("Loading took too much time!")
@@ -150,26 +181,36 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
         time.sleep(3)
 
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table')))
+            elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table')
             print ("Page is ready!")
-        except TimeoutException:
-            print ("Loading took too much time!")
+        except Exception as e:
+            print('Error while logging in', e)
+            traceback.print_exc()
+        try:
+            html_content = elem.html
+        except Exception as e:
+            print('Error while logging in', e)
+            traceback.print_exc()
 
 
         #['Unnamed: 0', 'Document title', 'Authors', 'Source', 'Year', 'Citations']
         #'Hide abstract'
         #'View at Publisher. Opens in a new tab.Related documents'
-        
-        df = pd.read_html(io.StringIO(elem.get_attribute('outerHTML')))[0]
-        i = 1
-        result.append([])
-        j = 2
+        try:
+            df = pd.read_html(io.StringIO(html_content))[0]
+            i = 1
+            result.append([])
+            j = 2
+            skip_seventh_row = False
+        except Exception as e:
+            print('Error while logging in', e)
+            traceback.print_exc()
 
-        skip_seventh_row = False
+        
 
         time.sleep(6)
         try:
-            elem = browser.find_element(By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table/tbody/tr[10]/td/div/div/button')
+            elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table/tbody/tr[10]/td/div/div/button')
             skip_seventh_row = True
         except NoSuchElementException:
             print("do not skip")
@@ -193,7 +234,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
     # change to oldest
 
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/div[1]/label/select/option[2]')))
+            elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/div[1]/label/select/option[2]')
             print ("Page is ready!")
         except TimeoutException:
             print ("Loading took too much time!")
@@ -201,12 +242,12 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
         time.sleep(5)
 
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table')))
+            elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table')
             print ("Page is ready!")
         except TimeoutException:
             print ("Loading took too much time!")
 
-        df = pd.read_html(io.StringIO(elem.get_attribute('outerHTML')))[0]
+        df = pd.read_html(io.StringIO(elem.html))[0]
         i = 1
         j = 3
         result.append([])
@@ -225,11 +266,10 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
             i = i + 3
         print(len(result[j]))
 
-
     # chage to most cited
 
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/div[1]/label/select/option[3]')))
+            elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/div[1]/label/select/option[3]')
             print ("Page is ready!")
         except TimeoutException:
             print ("Loading took too much time!")
@@ -237,12 +277,12 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
         time.sleep(5)
 
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table')))
+            elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table')
             print ("Page is ready!")
         except TimeoutException:
             print ("Loading took too much time!")
 
-        df = pd.read_html(io.StringIO(elem.get_attribute('outerHTML')))[0]
+        df = pd.read_html(io.StringIO(elem.html))[0]
         i = 1
         j = 4
         result.append([])
@@ -277,7 +317,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
         # export button
         #elem = browser.find_element(By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[1]/span/button/span[1]')  # Find the search box
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[1]/span/button')))
+            elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[1]/span/button')
             print ("Page is ready!")
         except TimeoutException:
             print ("Loading took too much time!")
@@ -286,7 +326,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
         time.sleep(2)
         # "my ris settings" button
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[1]/span/div/div[1]/button')))
+            elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[1]/span/div/div[1]/button')
             print ("Page is ready!")
         except TimeoutException:
             print ("Loading took too much time!")
@@ -295,7 +335,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
 
         # нажатие кнопки выбора кол-ва
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '//*[@id="select-range"]')))
+            elem = browser.ele('xpath://*[@id="select-range"]')
             print ("Page is ready!")
         except TimeoutException:
             print ("Loading took too much time!")
@@ -304,8 +344,8 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
 
         #левая и права границы
         try:
-            elem_left = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[1]/div/div/div[1]/div/div/div/div/div/div/div[1]/div/label/input')))
-            elem_right = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[1]/div/div/div[1]/div/div/div/div/div/div/div[2]/div/label/input')))
+            elem_left = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[1]/div/div/div[1]/div/div/div/div/div/div/div[1]/div/label/input')
+            elem_right = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[1]/div/div/div[1]/div/div/div/div/div/div/div[2]/div/label/input')
             print ("Page is ready!")
         except TimeoutException:
             print ("Loading took too much time!")    
@@ -313,12 +353,14 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
         num = result[1]
         num = num.replace(',', '')
         num = min(2500, int(num))
-        elem_left.send_keys("1" + Keys.RETURN)  
-        elem_right.send_keys(str(num) + Keys.RETURN)  
+        elem_left.input("1")
+        ac.key_down('RETURN')
+        elem_right.input(str(num))  
+        ac.key_down('RETURN')
 
         # "export" (finish) button
         try:
-            elem = WebDriverWait(browser, delay).until(EC.presence_of_element_located((By.XPATH, '/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[2]/div/div/span[2]/div/div/button')))
+            elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[2]/div/div/span[2]/div/div/button')
             print ("Page is ready!")
         except TimeoutException:
             print ("Loading took too much time!")
