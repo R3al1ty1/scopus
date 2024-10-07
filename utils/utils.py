@@ -59,10 +59,27 @@ def build_query_by_dialog_data(query : dict):
 #global warning AND PUBYEAR > 1971 AND PUBYEAR < 2026 AND ( LIMIT-TO ( LANGUAGE , "English" ) OR LIMIT-TO ( LANGUAGE , "Russian" ) ) AND ( LIMIT-TO ( DOCTYPE , "cp" ) OR LIMIT-TO ( DOCTYPE , "re" ) OR LIMIT-TO ( DOCTYPE , "ar" ) )
 
 def downloads_done(folder_id):
-    # Формируем относительный путь
-    relative_path = os.path.join(project_dir, 'scopus_files', str(folder_id), 'scopus.ris')
-    while not os.path.isfile(relative_path):
+    # Формируем абсолютный путь на основе заданной папки загрузки
+    download_dir = os.path.expanduser(f"/Users/user/Documents/scopus_files/{folder_id}")
+    file_path = os.path.join(download_dir, 'scopus.ris')
+    while not os.path.isfile(file_path):
         time.sleep(5)
+
+
+def set_prefs(folder_id):
+    chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    download_dir = os.path.expanduser(f"/Users/user/Documents/scopus_files/{folder_id}")
+
+    co = ChromiumOptions()
+    co.set_browser_path(chrome_path)
+
+    co.set_pref("download.default_directory", download_dir)
+    co.set_pref("download.prompt_for_download", False)
+    co.set_pref("directory_upgrade", True)
+    co.set_pref("safebrowsing.enabled", True)
+    co.set_pref("profile.default_content_setting_values.automatic_downloads", 1)
+
+    return co
 
 
 #result = [нашлось или нет, кол-во, самые новые, самые старые, самые цитируемые]
@@ -70,45 +87,17 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
 
     text_query = build_query_by_dialog_data(query)
     num = '2500'
-    chrome_path = "/usr/bin/google-chrome"
 
-    # binary = FirefoxBinary("/Applications/Firefox.app/Contents/MacOS/firefox")
-    # profile = FirefoxProfile("/Users/user/scopus/scopus/jhue6pi8.default-release")
-    # profile.set_preference("browser.download.folderList", 2)
-    # profile.set_preference("browser.download.manager.showWhenStarting", False)
-    # profile.set_preference("browser.download.dir", f"~/Desktop/scopus_files/{folder_id}")
-    # profile.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/x-gzip")
-
-    # Add more preferences if needed
-    # browser = webdriver.Firefox(firefox_profile=profile, options=options, firefox_binary=binary)
-
-    arguments = [
-        "-no-first-run",
-        "-force-color-profile=srgb",
-        "-metrics-recording-only",
-        "-password-store=basic",
-        "-use-mock-keychain",
-        "-export-tagged-pdf",
-        "-no-default-browser-check",
-        "-disable-background-mode",
-        "-enable-features=NetworkService,NetworkServiceInProcess,LoadCryptoTokenExtension,PermuteTLSExtensions",
-        "-disable-features=FlashDeprecationWarning,EnablePasswordsAccountStorage",
-        "-deny-permission-prompts",
-        "-disable-gpu",
-        "-accept-lang=en-US",
-    ]
+    co = set_prefs(folder_id=folder_id)
 
     try:
-        co = ChromiumOptions()
-        co.set_browser_path = chrome_path
         browser = ChromiumPage(co)
         ac = Actions(browser)
         browser.get('https://www.scopus.com/search/form.uri?display=advanced')
-        
         cf_bypasser = CloudflareBypasser(browser)
         cf_bypasser.bypass()
 
-        time.sleep(3)
+        time.sleep(6)
         keyboard.press_and_release('esc')
         try:
             try:
@@ -135,13 +124,13 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
                 except:
                     pass
                 browser.ele('@id:bdd-email').click()
-                browser.ele('@id:bdd-email').input('f1gl5d@tr.pte.hu')
+                browser.ele('@id:bdd-email').input('username')
                 browser.ele('@id:bdd-email').click()
                 keyboard.press_and_release('space')
                 keyboard.press_and_release('backspace')
                 continue_button = browser('Continue').click()
                 time.sleep(5)
-                browser.ele('xpath://*[@id="bdd-password"]').input('miki00789')
+                browser.ele('xpath://*[@id="bdd-password"]').input('passwd')
                 ac.key_down('RETURN')
             time.sleep(5)
 

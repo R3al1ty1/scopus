@@ -19,6 +19,8 @@ from aiogram_dialog.widgets.input import TextInput, MessageInput
 
 from aiogram_dialog.widgets.text import Jinja
 
+from database.requests import new_user
+
 import uuid
 import time
 
@@ -85,8 +87,14 @@ async def go_to_beginning(callback: CallbackQuery, button: Button, manager: Dial
     #manager.dialog_data['pressed'] = True
     await manager.switch_to(FSMFindPubs.choose_language)  
 
+
+
 async def start_search(callback: CallbackQuery, button: Button,
                      manager: DialogManager):
+    
+    chat_id = str(callback.message.chat.id)
+    new_user(chat_id)
+
     #await manager.switch_to(state=FSMFindPubs.search)
     manager.dialog_data['folder_id'] = uuid.uuid4()
     manager.dialog_data['pressed'] = True
@@ -176,7 +184,7 @@ async def download_file(callback: CallbackQuery, button: Button, manager: Dialog
         await asyncio.sleep(1)
         print("flag was set in handler and now we are waiting")
         await flag.wait()
-        await callback.message.answer_document(document=FSInputFile(f"/home/pushlin/Desktop/scopus_files/{manager.dialog_data['folder_id']}/scopus.ris"))
+        await callback.message.answer_document(document=FSInputFile(f"/Users/user/Documents/scopus_files/{manager.dialog_data['folder_id']}/scopus.ris"))
         await callback.message.answer("Спасибо, что воспользовались нашим ботом! \n\nЧтобы искать снова напишите команду /search")
         await manager.done() 
         return

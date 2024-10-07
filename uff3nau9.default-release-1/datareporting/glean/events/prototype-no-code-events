@@ -1,5 +1,0 @@
-{"timestamp":51086,"category":"browser.usage","name":"interaction","extra":{"source":"nav-bar","widget_id":"PanelUI-menu-button","flow_id":"{d5f7bc45-6096-4030-b08d-db19e0ed0ad3}","glean_timestamp":"1726068433150"},"execution_counter":10}
-{"timestamp":52319,"category":"browser.usage","name":"interaction","extra":{"flow_id":"{d5f7bc45-6096-4030-b08d-db19e0ed0ad3}","widget_id":"appMenu-settings-button","glean_timestamp":"1726068434383","source":"app-menu"},"execution_counter":10}
-{"timestamp":58420,"category":"browser.usage","name":"interaction","extra":{"glean_timestamp":"1726068440484","widget_id":"manageBrowserLanguagesButton","flow_id":"{d5f7bc45-6096-4030-b08d-db19e0ed0ad3}","source":"preferences_paneGeneral"},"execution_counter":10}
-{"timestamp":80146,"category":"glean","name":"restarted","extra":{"glean.startup.date":"2024-09-11T18:27+03:00","glean_timestamp":"1726068462211"},"execution_counter":11}
-{"timestamp":2537107,"category":"glean","name":"restarted","extra":{"glean_timestamp":"1726070919150","glean.startup.date":"2024-09-11T19:08+03:00"},"execution_counter":12}

@@ -113,3 +113,4 @@ websockets==13.0.1
 wsproto==1.2.0
 yarl==1.9.4
 keyboard==0.13.5
+sqlalchemy==2.0.35
