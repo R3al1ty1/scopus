@@ -1,4 +1,5 @@
 from typing import Any
+import traceback
 
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import default_state, State, StatesGroup
@@ -10,7 +11,6 @@ from aiogram.filters import Command, StateFilter
 
 from aiogram.types import FSInputFile, CallbackQuery, ContentType
 
-
 from aiogram_dialog import Dialog, Window, setup_dialogs, DialogManager, StartMode, BaseDialogManager, ShowMode
 from aiogram_dialog.widgets.text import Format, Multi, Const, Progress
 from aiogram_dialog.widgets.kbd import Checkbox, Button, Row, Cancel, Start, Next, ScrollingGroup
@@ -19,14 +19,15 @@ from aiogram_dialog.widgets.input import TextInput, MessageInput
 
 from aiogram_dialog.widgets.text import Jinja
 
-from database.requests import new_user
+# from database.requests import new_user
 
 import uuid
 import time
 
 import asyncio
 
-from utils.utils import download_scopus_file
+from utils.utils import download_scopus_file, downloads_done
+
 
 class FSMFindPubs(StatesGroup):
     choose_language = State()         # Состояние ожидания выбора языка
@@ -34,8 +35,8 @@ class FSMFindPubs(StatesGroup):
     choose_document_type = State()    # Состояние ожидания выбора типов документа
     filling_query = State()           # Состояние написания запроса
     validate = State()                # Валидация введенных данных
-    #search = State()                 # Состояние поиска
     check_pubs = State()              # Просмотр 50 статей
+
 
 async def dialog_get_data(dialog_manager: DialogManager, **kwargs):
     return {
@@ -49,6 +50,7 @@ async def dialog_get_data(dialog_manager: DialogManager, **kwargs):
         "pressed": dialog_manager.dialog_data['pressed'],
     }
 
+
 async def pubs_found(dialog_manager: DialogManager, **kwargs):
     return {
         "pubs_found": dialog_manager.dialog_data['pubs_found'],
@@ -61,7 +63,7 @@ async def next_and_set_not_pressed(callback: CallbackQuery, button: Button, mana
     manager.dialog_data['pressed_new'] = False
     await manager.next() 
 
-    
+
 async def error(
         message: Message,
         dialog_: Any,
@@ -72,34 +74,26 @@ async def error(
 
 
 def check_years(text):
-    
-    num_words=len(text.split())
-    if (num_words != 2):
+    num_words = len(text.split())
+    if num_words != 2:
         raise ValueError
-    words = text.split()  
-    print(words)
-    if (not (words[0].isnumeric() and words[1].isnumeric() and int(words[1]) >= int(words[0]) >= 0 and int(words[1]) < 10000)):
+    words = text.split()
+    if not (words[0].isnumeric() and words[1].isnumeric() and int(words[1]) >= int(words[0]) >= 0 and int(words[1]) < 10000):
         raise ValueError
     return text
 
 
 async def go_to_beginning(callback: CallbackQuery, button: Button, manager: DialogManager):
-    #manager.dialog_data['pressed'] = True
     await manager.switch_to(FSMFindPubs.choose_language)  
 
 
-
-async def start_search(callback: CallbackQuery, button: Button,
-                     manager: DialogManager):
-    
+async def start_search(callback: CallbackQuery, button: Button, manager: DialogManager):
     chat_id = str(callback.message.chat.id)
-    new_user(chat_id)
+    # new_user(chat_id)
 
-    #await manager.switch_to(state=FSMFindPubs.search)
     manager.dialog_data['folder_id'] = uuid.uuid4()
     manager.dialog_data['pressed'] = True
     await callback.message.answer("Отлично! Теперь, пожалуйста, подождите. Наш бот уже выполняет ваш запрос.")
-    loop = asyncio.get_event_loop()
 
     flag = asyncio.Event()
     future = asyncio.Future()
@@ -110,11 +104,7 @@ async def start_search(callback: CallbackQuery, button: Button,
     manager.dialog_data['flag'] = flag
     result = future.result()
 
-
-    #result = await loop.run_in_executor(None, download_scopus_file, await dialog_get_data(manager), manager.dialog_data['folder_id'])
-    ##result = await download_scopus_file(query= await dialog_get_data(manager), folder_id=manager.dialog_data['folder_id'])
-    if (result[0]):
-
+    if result[0]:
         manager.dialog_data['pubs_found'] = result[1]
         manager.dialog_data['newest'] = result[2]
         manager.dialog_data['oldest'] = result[3]
@@ -128,15 +118,14 @@ async def start_search(callback: CallbackQuery, button: Button,
     else:
         await callback.message.answer(text="По Вашему запросу не было найдено ни одной статьи.\n\nСпасибо, что воспользовались нашим ботом! \n\nЧтобы искать снова напишите команду /search")
         await manager.done()
-  
+
+
 def chunkstring(string, length):
-    return ([string[0+i:length+i] for i in range(0, len(string), length)])
+    return [string[0 + i:length + i] for i in range(0, len(string), length)]
 
 
-async def process_pub_click(callback: CallbackQuery, button: Button,
-                     manager: DialogManager):
-    if (int(callback.data) < len(manager.dialog_data['active_array'])):
-
+async def process_pub_click(callback: CallbackQuery, button: Button, manager: DialogManager):
+    if int(callback.data) < len(manager.dialog_data['active_array']):
         list_to_print = chunkstring(f"""
         {int(callback.data) + 1}
 *Название*    
@@ -157,52 +146,35 @@ async def process_pub_click(callback: CallbackQuery, button: Button,
 *Кол-во цитированиий*
         {manager.dialog_data['active_array'][int(callback.data)]['Citations'].replace('_', '-').replace('*', '✵')  }
 
-
 Чтобы виджет с выбором статей опустила вниз диалога, отправьте любое сообщение.
 
         """, 4096)
         for j in range(len(list_to_print)):
-            await callback.message.answer(list_to_print[j], parse_mode = 'Markdown')
+            await callback.message.answer(list_to_print[j], parse_mode='Markdown')
         await manager.switch_to(state=FSMFindPubs.check_pubs)
 
 
 def pub_buttons_create():
-    buttons = []
-    for i in range(0, 50):
-        i = str(i)
-        buttons.append(Button(Const('-'), id=i, on_click=process_pub_click, when=~F["pressed_new"]))
+    buttons = [Button(Const('-'), id=str(i), on_click=process_pub_click, when=~F["pressed_new"]) for i in range(50)]
     return buttons
 
 
 async def download_file(callback: CallbackQuery, button: Button, manager: DialogManager):
-    #manager.dialog_data['pressed'] = True
     manager.dialog_data['pressed_new'] = True
     try:
         await callback.message.answer("Отлично! Подождите пока мы скачиваем файл - это может занять некоторое время")
-        flag = manager.dialog_data['flag']
-        flag.set()
+        manager.dialog_data['flag'].set()  # установить флаг для начала загрузки
         await asyncio.sleep(1)
-        print("flag was set in handler and now we are waiting")
-        await flag.wait()
+        await downloads_done(manager.dialog_data['folder_id'])
         await callback.message.answer_document(document=FSInputFile(f"/Users/user/Documents/scopus_files/{manager.dialog_data['folder_id']}/scopus.ris"))
         await callback.message.answer("Спасибо, что воспользовались нашим ботом! \n\nЧтобы искать снова напишите команду /search")
-        await manager.done() 
-        return
-    except:
-        await callback.message.answer("Произошла непредвиденная ошибка, скорее всего Scopus начудил. Мы не спишем вам запрос. Попробуйте позже или переформулируйте запрос.")
-        await manager.done() 
+        await manager.done()
+    except Exception as e:
+        await callback.message.answer("Произошла непредвиденная ошибка, попробуйте снова.")
+        print('Error while logging in', e)
+        traceback.print_exc()
+        await manager.done()
 
-# async def do_not_download_file(callback: CallbackQuery, button: Button, manager: DialogManager):
-#     #manager.dialog_data['pressed'] = True
-#     manager.dialog_data['pressed_new'] = True
-#     manager.dialog_data['future'].set_result(False)
-#     flag.set()
-#     await asyncio.sleep(1)
-#     await callback.message.answer("Спасибо, что воспользовались нашим ботом! \n\nЧтобы искать снова напишите команду /search")
-#     await state.set_state(FSMFindPubs.choose_language)
-#     await manager.done()        
-
-#test_buttons = test_buttons_creator(range(0, 100))
 
 async def sort_by_newest(callback: CallbackQuery, button: Button, manager: DialogManager):
     manager.find("cit").text = Const("⚪️ Cited")
@@ -212,6 +184,7 @@ async def sort_by_newest(callback: CallbackQuery, button: Button, manager: Dialo
         manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['newest'][i]["Title"]))
     manager.dialog_data['active_array'] = manager.dialog_data['newest']   
 
+
 async def sort_by_oldest(callback: CallbackQuery, button: Button, manager: DialogManager):
     manager.find("cit").text = Const("⚪️ Cited")
     manager.find("date_new").text = Const("⚪️ Newest")
@@ -220,13 +193,14 @@ async def sort_by_oldest(callback: CallbackQuery, button: Button, manager: Dialo
         manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['oldest'][i]["Title"])) 
     manager.dialog_data['active_array'] = manager.dialog_data['oldest']  
 
+
 async def sort_by_most_cited(callback: CallbackQuery, button: Button, manager: DialogManager):
     manager.find("cit").text = Const("🔘 Cited")
     manager.find("date_new").text = Const("⚪️ Newest")
     manager.find("date_old").text = Const("⚪️ Oldest")
     for i in range(len(manager.dialog_data['most_cited'])):
         manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['most_cited'][i]["Title"]))  
-    manager.dialog_data['active_array'] = manager.dialog_data['most_cited']    
+    manager.dialog_data
 
 main_menu = Dialog(
     Window(

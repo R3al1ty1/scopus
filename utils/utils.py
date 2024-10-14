@@ -15,9 +15,14 @@ import asyncio
 import DrissionPage
 from DrissionPage import ChromiumPage, ChromiumOptions
 from DrissionPage.common import Actions
+from dotenv import load_dotenv
 
-import time
+import random
 
+
+load_dotenv()
+
+used_ports = []
 
 project_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -58,12 +63,22 @@ def build_query_by_dialog_data(query : dict):
 
 #global warning AND PUBYEAR > 1971 AND PUBYEAR < 2026 AND ( LIMIT-TO ( LANGUAGE , "English" ) OR LIMIT-TO ( LANGUAGE , "Russian" ) ) AND ( LIMIT-TO ( DOCTYPE , "cp" ) OR LIMIT-TO ( DOCTYPE , "re" ) OR LIMIT-TO ( DOCTYPE , "ar" ) )
 
-def downloads_done(folder_id):
-    # Формируем абсолютный путь на основе заданной папки загрузки
+async def downloads_done(folder_id):
+    max_retries = 13
     download_dir = os.path.expanduser(f"/Users/user/Documents/scopus_files/{folder_id}")
     file_path = os.path.join(download_dir, 'scopus.ris')
-    while not os.path.isfile(file_path):
-        time.sleep(5)
+    for i in range(max_retries):
+        if not os.path.isfile(file_path):
+            await asyncio.sleep(5)
+        else:
+            break
+
+
+def generate_port():
+    while True:
+        port = random.randint(9000, 9500)
+        if port not in used_ports:
+            return port
 
 
 def set_prefs(folder_id):
@@ -78,12 +93,17 @@ def set_prefs(folder_id):
     co.set_pref("directory_upgrade", True)
     co.set_pref("safebrowsing.enabled", True)
     co.set_pref("profile.default_content_setting_values.automatic_downloads", 1)
-
+    
+    port = generate_port()
+    used_ports.append(port)
+    
+    co.set_local_port(port)
+    
     return co
 
 
 #result = [нашлось или нет, кол-во, самые новые, самые старые, самые цитируемые]
-async def download_scopus_file(query : dict, folder_id: str, flag, future):
+async def download_scopus_file(query: dict, folder_id: str, flag, future):
 
     text_query = build_query_by_dialog_data(query)
     num = '2500'
@@ -97,42 +117,43 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
         cf_bypasser = CloudflareBypasser(browser)
         cf_bypasser.bypass()
 
-        time.sleep(6)
-        keyboard.press_and_release('esc')
+        await asyncio.sleep(6)
+        # keyboard.press_and_release('esc')
         try:
             try:
-                time.sleep(2)
+                await asyncio.sleep(2)
                 browser('Accept all cookies').click()
             except:
                 pass
             try:
-                time.sleep(2)
+                await asyncio.sleep(2)
                 browser('Maybe later').click()
-                time.sleep(2)
+                await asyncio.sleep(2)
             except:
                 pass
             sign_in_button = browser('Sign in').click()
             print("Sign-in button clicked")
-            time.sleep(5)
+            await asyncio.sleep(5)
             try:
-                browser.ele('xpath://*[@id="bdd-password"]').input('miki00789')
+                browser.ele('xpath://*[@id="bdd-password"]').input(os.getenv('PASSWORD'))
                 ac.key_down('RETURN')
             except:
                 try:
                     browser('Accept all cookies').click()
-                    time.sleep(2)
+                    await asyncio.sleep(2)
                 except:
                     pass
                 browser.ele('@id:bdd-email').click()
-                browser.ele('@id:bdd-email').input('username')
+                browser.ele('@id:bdd-email').input(os.getenv('LOGIN'))
                 browser.ele('@id:bdd-email').click()
-                keyboard.press_and_release('space')
-                keyboard.press_and_release('backspace')
-                continue_button = browser('Continue').click()
-                time.sleep(5)
-                browser.ele('xpath://*[@id="bdd-password"]').input('passwd')
+                
+                continue_button = browser('Continue')
+                continue_button.run_js("document.getElementById('bdd-elsPrimaryBtn').removeAttribute('disabled')")
+                continue_button.click()
+                await asyncio.sleep(5)
+                browser.ele('xpath://*[@id="bdd-password"]').input(os.getenv('PASSWORD'))
                 ac.key_down('RETURN')
-            time.sleep(5)
+            await asyncio.sleep(5)
 
             print("Email entered and submitted")
             
@@ -149,7 +170,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
             traceback.print_exc()
             browser.quit()
 
-        time.sleep(3)
+        await asyncio.sleep(3)
 
         try:
             try:
@@ -168,7 +189,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
 
         #нашлось или не нашлось
         
-        time.sleep(6)
+        await asyncio.sleep(6)
         try:
             elem = browser.ele('xpath://*[@id="container"]/micro-ui/document-search-results-page/div[1]/section[1]/div[3]/div/div/div[1]/h2')
             result.append(True)
@@ -191,7 +212,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
             print ("Loading took too much time!")
             browser.quit()
         elem.click()
-        time.sleep(3)
+        await asyncio.sleep(3)
 
     
     # show all abstract
@@ -202,7 +223,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
             print ("Loading took too much time!")
             browser.quit()
         elem.click()
-        time.sleep(3)
+        await asyncio.sleep(3)
 
         try:
             elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table')
@@ -235,7 +256,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
 
         
 
-        time.sleep(6)
+        await asyncio.sleep(6)
         try:
             elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table/tbody/tr[10]/td/div/div/button')
             skip_seventh_row = True
@@ -267,7 +288,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
             print ("Loading took too much time!")
             browser.quit()
         elem.click()
-        time.sleep(5)
+        await asyncio.sleep(5)
 
         try:
             elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table')
@@ -304,7 +325,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
             print ("Loading took too much time!")
             browser.quit()
         elem.click()
-        time.sleep(5)
+        await asyncio.sleep(5)
 
         try:
             elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table')
@@ -355,7 +376,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
             browser.quit()
         elem.click()
 
-        time.sleep(2)
+        await asyncio.sleep(2)
         # "my ris settings" button
         try:
             browser('RIS').click()
@@ -394,7 +415,7 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
 
         # "export" (finish) button
         try:
-            time.sleep(5)
+            await asyncio.sleep(5)
             elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[2]/div/div/span[2]/div/div/button')
             print ("Page is ready!")
         except TimeoutException:
@@ -402,8 +423,8 @@ async def download_scopus_file(query : dict, folder_id: str, flag, future):
             print ("Loading took too much time!")
 
         elem.click()
-        time.sleep(5)
-        downloads_done(folder_id)
+        await asyncio.sleep(5)
+        await downloads_done(folder_id)
         flag.set()
         await asyncio.sleep(1.5)
         browser.quit()
