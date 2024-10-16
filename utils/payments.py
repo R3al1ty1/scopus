@@ -21,7 +21,7 @@ def buy_requests(amount, chat_id):
         },
         "confirmation": {
             "type": "redirect",
-            "return_url": "https://t.me/fwegiqbweabflk3q_bot"
+            "return_url": "https://t.me/ScopusRuBot"
         },
         "capture": True,
         "metadata": {
