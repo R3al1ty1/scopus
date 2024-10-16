@@ -14,8 +14,6 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from bypass.CloudflareBypasser import CloudflareBypasser
 from DrissionPage import ChromiumPage, ChromiumOptions
 from DrissionPage.common import Actions
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 from dotenv import load_dotenv
 
 from utils.const import PROJECT_DIR
