@@ -41,8 +41,10 @@ class CloudflareBypasser:
         if button:
             return button
         else:
+            
             # If the button is not found, search it recursively
             self.log_message("Basic search failed. Searching for button recursively.")
+            return
             ele = self.driver.ele("tag:body")
             iframe = self.search_recursively_shadow_root_with_iframe(ele)
             if iframe:
@@ -50,6 +52,7 @@ class CloudflareBypasser:
             else:
                 self.log_message("Iframe not found. Button search failed.")
             return button
+
 
     def log_message(self, message):
         if self.log:

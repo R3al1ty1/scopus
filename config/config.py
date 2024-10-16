@@ -41,10 +41,4 @@ def load_config(path) -> Config:
             token=env('BOT_TOKEN'),
             admin_ids=list(map(str, env.list('ADMIN_USERNAMES')))
         )
-        #db=DatabaseConfig(
-        #    database=env('DATABASE'),
-        #    db_host=env('DB_HOST'),
-        #    db_user=env('DB_USER'),
-        #    db_password=env('DB_PASSWORD')
-        #)
     )

@@ -1,12 +1,19 @@
-# from sqlalchemy import Column, Integer, create_engine
-# from sqlalchemy.ext.declarative import declarative_base
+import os
 
-# DATABASE_URL = "postgresql://username:password@localhost:5432/db-name"
-# engine = create_engine(DATABASE_URL)
-# Base = declarative_base()
-# Base.metadata.create_all(engine)
+from sqlalchemy import Column, Integer, String, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from dotenv import load_dotenv
 
-# class Chat(Base):
-#     __tablename__ = 'user_requests'
-#     chat_id = Column(Integer, primary_key=True)
-#     requests = Column(Integer, default=5)
+
+load_dotenv()
+
+DATABASE_URL = f"postgresql://{os.getenv('DB-USER')}:{os.getenv('DB-PASSWORD')}@{os.getenv('DB-HOST')}:{os.getenv('DB-PORT')}/{os.getenv('DB-NAME')}"
+engine = create_engine(DATABASE_URL)
+Base = declarative_base()
+Base.metadata.create_all(engine)
+
+class Chat(Base):
+    __tablename__ = 'user_requests'
+    chat_id = Column(Integer, primary_key=True)
+    username = Column(String)
+    requests = Column(Integer, default=5)

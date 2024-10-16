@@ -1,32 +1,25 @@
-from typing import Any
-import traceback
-
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import default_state, State, StatesGroup
-
-from aiogram.types import Message
-from aiogram import Router, F
-
-from aiogram.filters import Command, StateFilter
-
-from aiogram.types import FSInputFile, CallbackQuery, ContentType
-
-from aiogram_dialog import Dialog, Window, setup_dialogs, DialogManager, StartMode, BaseDialogManager, ShowMode
-from aiogram_dialog.widgets.text import Format, Multi, Const, Progress
-from aiogram_dialog.widgets.kbd import Checkbox, Button, Row, Cancel, Start, Next, ScrollingGroup
-
-from aiogram_dialog.widgets.input import TextInput, MessageInput
-
-from aiogram_dialog.widgets.text import Jinja
-
-# from database.requests import new_user
-
 import uuid
-import time
-
+import traceback
 import asyncio
+import shutil
+import os
+
+from typing import Any
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram import Router, F
+from aiogram.types import FSInputFile, CallbackQuery, ContentType
+from aiogram_dialog import Dialog, Window, DialogManager, ShowMode
+from aiogram_dialog.widgets.text import Format,Const
+from aiogram_dialog.widgets.kbd import Checkbox, Button, Row, Next, ScrollingGroup
+from aiogram_dialog.widgets.input import TextInput
+from database.requests import new_user, charge_request, add_requests
+from aiogram.filters.callback_data import CallbackData
 
 from utils.utils import download_scopus_file, downloads_done
+from handlers.service_handlers import process_payments_command
+from utils.const import PROJECT_DIR
 
 
 class FSMFindPubs(StatesGroup):
@@ -89,11 +82,17 @@ async def go_to_beginning(callback: CallbackQuery, button: Button, manager: Dial
 
 async def start_search(callback: CallbackQuery, button: Button, manager: DialogManager):
     chat_id = str(callback.message.chat.id)
-    # new_user(chat_id)
+    username = str(callback.message.chat.username)
+    new_user(chat_id, username)
 
     manager.dialog_data['folder_id'] = uuid.uuid4()
     manager.dialog_data['pressed'] = True
-    await callback.message.answer("Отлично! Теперь, пожалуйста, подождите. Наш бот уже выполняет ваш запрос.")
+    if charge_request(chat_id=chat_id):
+        await callback.message.answer("Отлично! Теперь, пожалуйста, подождите. Наш бот уже выполняет ваш запрос. Это займет около минуты. ⏳")
+    else:
+        await callback.message.answer("К сожалению, на вашем балансе закончились запросы.\nПриобретите их сейчас👇🏼")
+        await process_payments_command(callback.message)
+        return
 
     flag = asyncio.Event()
     future = asyncio.Future()
@@ -116,7 +115,7 @@ async def start_search(callback: CallbackQuery, button: Button, manager: DialogM
         await manager.switch_to(state=FSMFindPubs.check_pubs, show_mode=ShowMode.SEND)
 
     else:
-        await callback.message.answer(text="По Вашему запросу не было найдено ни одной статьи.\n\nСпасибо, что воспользовались нашим ботом! \n\nЧтобы искать снова напишите команду /search")
+        await callback.message.answer(text="По Вашему запросу не было найдено ни одной статьи.\n\nСпасибо, что воспользовались нашим ботом! 🎉\n\nЧтобы искать снова, напишите команду /search")
         await manager.done()
 
 
@@ -161,19 +160,29 @@ def pub_buttons_create():
 
 async def download_file(callback: CallbackQuery, button: Button, manager: DialogManager):
     manager.dialog_data['pressed_new'] = True
+    folder_path = f"{PROJECT_DIR}/scopus_files/{manager.dialog_data['folder_id']}"
     try:
-        await callback.message.answer("Отлично! Подождите пока мы скачиваем файл - это может занять некоторое время")
+        await callback.message.answer("Отлично! Подождите, пожалуйста, пока мы скачиваем файл — это может занять некоторое время")
         manager.dialog_data['flag'].set()  # установить флаг для начала загрузки
         await asyncio.sleep(1)
         await downloads_done(manager.dialog_data['folder_id'])
-        await callback.message.answer_document(document=FSInputFile(f"/Users/user/Documents/scopus_files/{manager.dialog_data['folder_id']}/scopus.ris"))
-        await callback.message.answer("Спасибо, что воспользовались нашим ботом! \n\nЧтобы искать снова напишите команду /search")
+        file_path = f"{folder_path}/scopus.ris"
+        
+        await callback.message.answer_document(document=FSInputFile(file_path))
+        await callback.message.answer("Спасибо, что воспользовались нашим ботом! 🎉\nЧтобы начать новый поиск, напишите команду /search")
         await manager.done()
+
     except Exception as e:
-        await callback.message.answer("Произошла непредвиденная ошибка, попробуйте снова.")
-        print('Error while logging in', e)
+        await callback.message.answer("Произошла ошибка, скорее всего, Scopus начудил.\n\nМы не спишем вам запрос. Попробуйте позже или переформулируйте запрос.")
+        chat_id = str(callback.message.chat.id)
+        add_requests(chat_id, 1)
+        print(e)
         traceback.print_exc()
         await manager.done()
+
+    finally:
+        if os.path.exists(folder_path):
+            shutil.rmtree(folder_path)
 
 
 async def sort_by_newest(callback: CallbackQuery, button: Button, manager: DialogManager):
@@ -226,7 +235,7 @@ main_menu = Dialog(
     ),
     Window(
         Const(
-            "Напишите в каком временном диапазоне Вы хотите искать статьи, укажите года через пробел.\n\nНапример:\n'0 2028' или '1989 2001' или '2023 2023'."
+            "Укажите временной диапазон, в котором Вы хотите искать статьи, введя годы через пробел. 📅\n\nНапример:\n0 2028 или 1989 2001 или 2023 2023"
         ),
         TextInput(
             id="years",
@@ -238,26 +247,26 @@ main_menu = Dialog(
     ),
     Window(
         Const(
-            "Выберите, если нужно, типы документов для фильтрации."
+            "Выберите типы документов для фильтрации (если необходимо):"
         ),
         Row(
             Checkbox(
-                Const("☑️ Article📝"),
-                Const("⬜ Article📝"),
+                Const("☑️ 📝 Статья (Article)"),
+                Const("⬜ 📝 Статья (Article)"),
                 id="art",
                 default=False,  # so it will be checked by default,
             ),
             Checkbox(
-                Const("☑️ Review📣"),
-                Const("⬜ Review📣"),
+                Const("☑️ 📢 Обзор (Review)"),
+                Const("⬜ 📢 Обзор (Review)"),
                 id="rev",
                 default=False,  # so it will be checked by default,
             ),
         ),
         Row(
             Checkbox(
-                Const("☑️ Conference\npaper👥"),
-                Const("⬜ Conference\npaper👥"),
+                Const("☑️ 👥 Статья с конференции\n(Conference Paper)"),
+                Const("⬜ 👥 Статья с конференции\n(Conference Paper)"),
                 id="conf",
                 default=False,  # so it will be checked by default,
             ),
@@ -266,7 +275,7 @@ main_menu = Dialog(
         state=FSMFindPubs.choose_document_type,
     ),
     Window(
-        Const("Теперь введите сам поисковый запрос."),
+        Const("Пожалуйста, введите сам поисковый запрос. 🔍"),
         TextInput(
             id="query",
             on_success=Next(),
@@ -274,7 +283,8 @@ main_menu = Dialog(
         state=FSMFindPubs.filling_query,
     ),
     Window(
-        Format("""Проверьте корректность введеных данных.\n\nУбедитесь, что в запросе нет опечаток - скопус может ничего не найти, но мы всё равно спишем запрос с вашего счёта.  
+        Format(
+        """Проверьте корректность введённых данных.\n\nУбедитесь, что в запросе нет опечаток — в противном случае скопус может ничего не найти, но запрос всё равно будет списан с вашего счёта. 🧐
 
     Русский язык: {ru}
     Английский язык: {eng}
@@ -283,8 +293,8 @@ main_menu = Dialog(
     Review: {rev}
     Conference paper: {conf}
     ----------------
-    Текст запроса: "{query}"                  
-"""),
+    Текст запроса: "{query}" 
+    """),
         Button(text=Const("🔁 Заново"), id="again", on_click=go_to_beginning, when=~F["pressed"]),
         Button(text=Const("▶️ Поиск"), id="search", on_click=start_search, when=~F["pressed"]),
         state=FSMFindPubs.validate,
