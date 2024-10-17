@@ -24,7 +24,7 @@ button_large = InlineKeyboardButton(text='LargeLab', callback_data='large')
 
 keyboard_payments = InlineKeyboardMarkup(inline_keyboard=[
     [button_1, button_5, button_10, button_20],
-    [button_small, button_medium, button_large]
+    # [button_small, button_medium, button_large]
 ])
 
 
@@ -53,12 +53,14 @@ async def process_start_command(message: Message):
 async def process_payments_command(message: Message):
     """Обработчик команды /payments."""
     await message.answer(
-        text="""Выберите количество запросов для покупки:
-1 - 49 руб.
-5 - 229 руб.
-10 - 419 руб.
-20 - 799 руб.
-Тарифы SmallLab, MediumLab, LargeLab включают в себя 300, 500 и 800 запросов соответственно.""",
+        text="""💰 Выберите, пожалуйста, количество запросов для покупки:
+
+1 запрос - <s>49 руб</s>  29 руб*
+5 запросов - <s>229 руб</s>  149 руб*
+10 запросов - <s>419 руб</s>  269 руб*
+20 запросов - <s>799 руб</s>  449 руб*
+
+*Цены со скидкой на время бета-тестирования""",
         reply_markup=keyboard_payments
     )
 
@@ -94,11 +96,11 @@ async def check_payment(callback: CallbackQuery):
 @router.message(Command(commands='support'), StateFilter(default_state))
 async def process_support_command(message: Message):
     """Обработчик команды /support."""
-    await message.answer(text="По вопросам пишите: @chadbugsy")
+    await message.answer(text="💬 Поддержка: @chadbugsy")
 
 
 @router.message(Command(commands='balance'), StateFilter(default_state))
 async def process_balance_command(message: Message):
     """Обработчик команды /balance."""
     requests = get_requests(message.chat.id)
-    await message.answer(f"Количество запросов на Вашем счету: {requests}.\nЧтобы пополнить баланс, используйте команду /payments.")
+    await message.answer(f"Количество запросов на Вашем счету: {requests}.\n💳 Чтобы пополнить баланс, используйте команду /payments.")
