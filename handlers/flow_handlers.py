@@ -19,6 +19,6 @@ async def process_search_command(message: Message, state: FSMContext, dialog_man
     await dialog_manager.start(dialogs.FSMFindPubs.choose_language, mode=StartMode.RESET_STACK)
 
 # Хендлер для нажатия кнопки search
-@router.callback_query(F.data == "search_button_pressed", lambda x: x.from_user.username in ["Parckes", "mikail_kryt", "iamk8", "uvwxxz", "OGLuckySaPer", "serhio_vsh"])
+@router.callback_query(F.data == "search_button_pressed", StateFilter(default_state))
 async def process_search_button(callback: CallbackQuery, state: FSMContext, dialog_manager: DialogManager):
     await dialog_manager.start(dialogs.FSMFindPubs.choose_language, mode=StartMode.RESET_STACK)
