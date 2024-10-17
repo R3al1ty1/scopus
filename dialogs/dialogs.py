@@ -6,16 +6,14 @@ import os
 
 from typing import Any
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram import Router, F
-from aiogram.types import FSInputFile, CallbackQuery, ContentType
+from aiogram.types import Message
+from aiogram import F
+from aiogram.types import FSInputFile, CallbackQuery
 from aiogram_dialog import Dialog, Window, DialogManager, ShowMode
 from aiogram_dialog.widgets.text import Format,Const
 from aiogram_dialog.widgets.kbd import Checkbox, Button, Row, Next, ScrollingGroup
 from aiogram_dialog.widgets.input import TextInput
 from database.requests import new_user, charge_request, add_requests
-from aiogram.filters.callback_data import CallbackData
 
 from utils.utils import download_scopus_file, downloads_done
 from handlers.service_handlers import process_payments_command
@@ -26,12 +24,22 @@ class FSMFindPubs(StatesGroup):
     choose_language = State()         # Состояние ожидания выбора языка
     choose_years = State()            # Состояние ожидания ввода годов
     choose_document_type = State()    # Состояние ожидания выбора типов документа
+    choose_filter_type = State()
     filling_query = State()           # Состояние написания запроса
     validate = State()                # Валидация введенных данных
     check_pubs = State()              # Просмотр 50 статей
 
 
 async def dialog_get_data(dialog_manager: DialogManager, **kwargs):
+    filter_type = "Title-abstract-keywords"
+
+    if dialog_manager.find("title").is_checked():
+        filter_type = "Title"
+    elif dialog_manager.find("keywords").is_checked():
+        filter_type = "Keywords"
+    elif dialog_manager.find("authors").is_checked():
+        filter_type = "Authors"
+
     return {
         "ru": dialog_manager.find("ru").is_checked(),
         "eng": dialog_manager.find("eng").is_checked(),
@@ -39,6 +47,7 @@ async def dialog_get_data(dialog_manager: DialogManager, **kwargs):
         "art": dialog_manager.find("art").is_checked(),
         "rev": dialog_manager.find("rev").is_checked(),
         "conf": dialog_manager.find("conf").is_checked(),
+        "filter_type": filter_type,
         "query": dialog_manager.find("query").get_value(),
         "pressed": dialog_manager.dialog_data['pressed'],
     }
@@ -49,6 +58,32 @@ async def pubs_found(dialog_manager: DialogManager, **kwargs):
         "pubs_found": dialog_manager.dialog_data['pubs_found'],
         "pressed_new": dialog_manager.dialog_data['pressed_new'],
     }
+
+
+async def on_checkbox_click(event, widget, manager: DialogManager):
+    selected_id = widget.widget_id
+
+    checkboxes = [
+        manager.dialog().find("title"),
+        manager.dialog().find("keywords"),
+        manager.dialog().find("authors"),
+        manager.dialog().find("tak")
+    ]
+
+    for checkbox in checkboxes:
+        if checkbox.widget_id != selected_id:
+            await checkbox.set_checked(event=event, checked=False, manager=manager)
+        else:
+            await checkbox.set_checked(event=event, checked=True, manager=manager)
+
+    selected_filter = {
+        "title": "Title",
+        "keywords": "Keywords",
+        "authors": "Authors",
+        "tak": "Title-abs-key",
+    }.get(selected_id, "Title-abs-key")
+
+    await manager.update(data={"selected_filter": selected_filter})
 
 
 async def next_and_set_not_pressed(callback: CallbackQuery, button: Button, manager: DialogManager):
@@ -170,25 +205,32 @@ async def download_file(callback: CallbackQuery, button: Button, manager: Dialog
         
         await callback.message.answer_document(document=FSInputFile(file_path))
         await callback.message.answer("Спасибо, что воспользовались нашим ботом! 🎉\nЧтобы начать новый поиск, напишите команду /search")
+
+        if os.path.exists(folder_path):
+            shutil.rmtree(folder_path)
+
         await manager.done()
 
     except Exception as e:
-        await callback.message.answer("Произошла ошибка, скорее всего, Scopus начудил.\n\nМы не спишем вам запрос. Попробуйте позже или переформулируйте запрос.")
+        await callback.message.answer("Произошла ошибка, скорее всего, Scopus начудил.\n\nМы не спишем вам запрос. Попробуйте заново или переформулируйте запрос.")
         chat_id = str(callback.message.chat.id)
         add_requests(chat_id, 1)
         print(e)
         traceback.print_exc()
-        await manager.done()
 
-    finally:
         if os.path.exists(folder_path):
             shutil.rmtree(folder_path)
+
+        await manager.done()
 
 
 async def sort_by_newest(callback: CallbackQuery, button: Button, manager: DialogManager):
     manager.find("cit").text = Const("⚪️ Cited")
     manager.find("date_new").text = Const("🔘 Newest")
     manager.find("date_old").text = Const("⚪️ Oldest")
+
+    manager.dialog_data['active_array'] = manager.dialog_data['most_cited']
+
     for i in range(len(manager.dialog_data['newest'])):
         manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['newest'][i]["Title"]))
     manager.dialog_data['active_array'] = manager.dialog_data['newest']   
@@ -198,6 +240,9 @@ async def sort_by_oldest(callback: CallbackQuery, button: Button, manager: Dialo
     manager.find("cit").text = Const("⚪️ Cited")
     manager.find("date_new").text = Const("⚪️ Newest")
     manager.find("date_old").text = Const("🔘 Oldest")
+
+    manager.dialog_data['active_array'] = manager.dialog_data['most_cited']
+
     for i in range(len(manager.dialog_data['oldest'])):
         manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['oldest'][i]["Title"])) 
     manager.dialog_data['active_array'] = manager.dialog_data['oldest']  
@@ -207,6 +252,9 @@ async def sort_by_most_cited(callback: CallbackQuery, button: Button, manager: D
     manager.find("cit").text = Const("🔘 Cited")
     manager.find("date_new").text = Const("⚪️ Newest")
     manager.find("date_old").text = Const("⚪️ Oldest")
+
+    manager.dialog_data['active_array'] = manager.dialog_data['most_cited']
+
     for i in range(len(manager.dialog_data['most_cited'])):
         manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['most_cited'][i]["Title"]))  
     manager.dialog_data
@@ -275,6 +323,45 @@ main_menu = Dialog(
         state=FSMFindPubs.choose_document_type,
     ),
     Window(
+        Const(
+            "📋 Выберите тип фильтрации (стандартное значение — Title-abs-key), если требуется другой:"
+        ),
+        Row(
+            Checkbox(
+                Const("☑️ Title-abs-key"),
+                Const("⬜ Title-abs-key"),
+                id="tak",
+                default=True,  # so it will be checked by default,
+                on_click=on_checkbox_click,
+            ),
+        ),
+        Row(
+            Checkbox(
+                Const("☑️ Title"),
+                Const("⬜ Title"),
+                id="title",
+                default=False,  # so it will be checked by default,
+                on_click=on_checkbox_click,
+            ),
+            Checkbox(
+                Const("☑️ Keywords"),
+                Const("⬜ Keywords"),
+                id="keywords",
+                default=False,  # so it will be checked by default,
+                on_click=on_checkbox_click,
+            ),
+            Checkbox(
+                Const("☑️ Authors"),
+                Const("⬜ Authors"),
+                id="authors",
+                default=False,  # so it will be checked by default,
+                on_click=on_checkbox_click,
+            ),
+        ),
+        Button(text=Const("Дальше"), id="save", on_click=Next()),
+        state=FSMFindPubs.choose_filter_type,
+    ),
+    Window(
         Const("Пожалуйста, введите сам поисковый запрос. 🔍"),
         TextInput(
             id="query",
@@ -292,6 +379,7 @@ main_menu = Dialog(
     Article: {art}
     Review: {rev}
     Conference paper: {conf}
+    Фильтр: {filter_type}
     ----------------
     Текст запроса: "{query}" 
     """),

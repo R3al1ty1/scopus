@@ -31,5 +31,12 @@ DESCRIPTIONS_DCT = {
     1999: "Покупка 800 запросов",
 }
 
+FILTERS_DCT = {
+    'Title-abstract-keywords': "TITLE-ABS-KEY",
+    'Authors': "AUTH",
+    'Title': "TITLE",
+    'Keywords': "KEY"
+}
+
 project_dir = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR= os.path.dirname(project_dir)

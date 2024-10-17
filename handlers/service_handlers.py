@@ -94,7 +94,7 @@ async def check_payment(callback: CallbackQuery):
 @router.message(Command(commands='support'), StateFilter(default_state))
 async def process_support_command(message: Message):
     """Обработчик команды /support."""
-    await message.answer(text="По вопросам пишите: @sirtyler @mikail_kryt. Техподдержка: @ba1xo")
+    await message.answer(text="По вопросам пишите: @chadbugsy")
 
 
 @router.message(Command(commands='balance'), StateFilter(default_state))

@@ -1,4 +1,4 @@
-import time
+import asyncio
 from DrissionPage import ChromiumPage
 
 class CloudflareBypasser:
@@ -7,29 +7,29 @@ class CloudflareBypasser:
         self.max_retries = max_retries
         self.log = log
 
-    def search_recursively_shadow_root_with_iframe(self,ele):
+    async def search_recursively_shadow_root_with_iframe(self, ele):
         if ele.shadow_root:
             if ele.shadow_root.child().tag == "iframe":
                 return ele.shadow_root.child()
         else:
             for child in ele.children():
-                result = self.search_recursively_shadow_root_with_iframe(child)
+                result = await self.search_recursively_shadow_root_with_iframe(child)
                 if result:
                     return result
         return None
 
-    def search_recursively_shadow_root_with_cf_input(self,ele):
+    async def search_recursively_shadow_root_with_cf_input(self, ele):
         if ele.shadow_root:
             if ele.shadow_root.ele("tag:input"):
                 return ele.shadow_root.ele("tag:input")
         else:
             for child in ele.children():
-                result = self.search_recursively_shadow_root_with_cf_input(child)
+                result = await self.search_recursively_shadow_root_with_cf_input(child)
                 if result:
                     return result
         return None
     
-    def locate_cf_button(self):
+    async def locate_cf_button(self):
         button = None
         eles = self.driver.eles("tag:input")
         for ele in eles:
@@ -41,36 +41,32 @@ class CloudflareBypasser:
         if button:
             return button
         else:
-            
             # If the button is not found, search it recursively
             self.log_message("Basic search failed. Searching for button recursively.")
-            return
             ele = self.driver.ele("tag:body")
-            iframe = self.search_recursively_shadow_root_with_iframe(ele)
+            iframe = await self.search_recursively_shadow_root_with_iframe(ele)
             if iframe:
-                button = self.search_recursively_shadow_root_with_cf_input(iframe("tag:body"))
+                button = await self.search_recursively_shadow_root_with_cf_input(iframe("tag:body"))
             else:
                 self.log_message("Iframe not found. Button search failed.")
             return button
-
 
     def log_message(self, message):
         if self.log:
             print(message)
 
-    def click_verification_button(self):
+    async def click_verification_button(self):
         try:
-            button = self.locate_cf_button()
+            button = await self.locate_cf_button()
             if button:
                 self.log_message("Verification button found. Attempting to click.")
                 button.click()
             else:
                 self.log_message("Verification button not found.")
-
         except Exception as e:
             self.log_message(f"Error clicking verification button: {e}")
 
-    def is_bypassed(self):
+    async def is_bypassed(self):
         try:
             title = self.driver.title.lower()
             return "just a moment" not in title
@@ -78,22 +74,21 @@ class CloudflareBypasser:
             self.log_message(f"Error checking page title: {e}")
             return False
 
-    def bypass(self):
-        
+    async def bypass(self):
         try_count = 0
 
-        while not self.is_bypassed():
+        while not await self.is_bypassed():
             if 0 < self.max_retries + 1 <= try_count:
                 self.log_message("Exceeded maximum retries. Bypass failed.")
                 break
 
             self.log_message(f"Attempt {try_count + 1}: Verification page detected. Trying to bypass...")
-            self.click_verification_button()
+            await self.click_verification_button()
 
             try_count += 1
-            time.sleep(2)
+            await asyncio.sleep(2)
 
-        if self.is_bypassed():
+        if await self.is_bypassed():
             self.log_message("Bypass successful.")
         else:
             self.log_message("Bypass failed.")

@@ -7,7 +7,6 @@ import os
 import math
 import asyncio
 import DrissionPage
-import time
 
 from selenium.common.exceptions import TimeoutException
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
@@ -16,7 +15,7 @@ from DrissionPage import ChromiumPage, ChromiumOptions
 from DrissionPage.common import Actions
 from dotenv import load_dotenv
 
-from utils.const import PROJECT_DIR
+from utils.const import PROJECT_DIR, FILTERS_DCT
 
 
 load_dotenv()
@@ -26,14 +25,17 @@ used_ports = []
 project_dir = PROJECT_DIR
 
 
-def build_query_by_dialog_data(query : dict):
+async def build_query_by_dialog_data(query : dict):
     """Функция для построения запроса в Scopus."""
     result = ""
     html_content = ""
+
+    result += f"{FILTERS_DCT[query['filter_type']]}("
+    result += f"{query['query']})"
     if (query['years'].split()[0] == query['years'].split()[1]):
-        result = result + query['query'] + f" AND PUBYEAR = {query['years'].split()[0]}"
+        result = result + f" AND PUBYEAR = {query['years'].split()[0]}"
     else:
-        result = result + query['query'] + f" AND PUBYEAR > {query['years'].split()[0]}" + f" AND PUBYEAR < {query['years'].split()[1]}"
+        result = result + f" AND PUBYEAR > {query['years'].split()[0]}" + f" AND PUBYEAR < {query['years'].split()[1]}"
 
     langs = []
     langs_str = ''
@@ -73,7 +75,7 @@ async def downloads_done(folder_id):
         else:
             break
 
-def generate_port():
+async def generate_port():
     """Создание порта для запуска браузера."""
     while True:
         port = random.randint(9000, 9500)
@@ -81,7 +83,7 @@ def generate_port():
             return port
 
 
-def set_prefs(folder_id):
+async def set_prefs(folder_id):
     """Установление парамтеров браузера"""
     chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     download_dir = os.path.expanduser(f"{project_dir}/scopus_files/{folder_id}")
@@ -94,8 +96,9 @@ def set_prefs(folder_id):
     co.set_pref("directory_upgrade", True)
     co.set_pref("safebrowsing.enabled", True)
     co.set_pref("profile.default_content_setting_values.automatic_downloads", 1)
+    co.set_argument('--start-maximized')
     
-    port = generate_port()
+    port = await generate_port()
     used_ports.append(port)
     
     co.set_local_port(port)
@@ -107,37 +110,33 @@ async def authorization_scopus(browser, ac):
     """Авторизация Scopus."""
     try:
         try:
-            # await asyncio.sleep(2)
-            browser.ele('Accept all cookies', timeout=4).click()
+            browser.ele('Accept all cookies', timeout=2.5).click()
         except:
             pass
         try:
             await asyncio.sleep(2)
-            browser.ele('Maybe later', timeout=4).click()
-            # await asyncio.sleep(2)
+            browser.ele('Maybe later', timeout=2.5).click()
         except:
             pass
-        sign_in_button = browser.ele('Sign in', timeout=4).click()
+        sign_in_button = browser.ele('Sign in', timeout=2.5).click()
         print("Sign-in button clicked")
-        # await asyncio.sleep(3)
         try:
-            browser.ele('xpath://*[@id="bdd-password"]', timeout=4).input(os.getenv('PASSWORD'))
+            browser.ele('xpath://*[@id="bdd-password"]', timeout=2.5).input(os.getenv('PASSWORD'))
             await asyncio.sleep(0.5)
             ac.key_down('RETURN')
         except:
             try:
-                browser.ele('Accept all cookies', timeout=4).click()
-                # await asyncio.sleep(2)
+                browser.ele('Accept all cookies', timeout=2.5).click()
             except:
                 pass
-            browser.ele('@id:bdd-email', timeout=4).click()
-            browser.ele('@id:bdd-email', timeout=4).input(os.getenv('LOGIN'))
-            browser.ele('@id:bdd-email', timeout=4).click()
+            browser.ele('@id:bdd-email', timeout=2.5).click()
+            browser.ele('@id:bdd-email', timeout=2.5).input(os.getenv('LOGIN'))
+            browser.ele('@id:bdd-email', timeout=2.5).click()
             
-            continue_button = browser.ele('Continue', timeout=4)
+            continue_button = browser.ele('Continue', timeout=2.5)
             continue_button.run_js("document.getElementById('bdd-elsPrimaryBtn').removeAttribute('disabled')")
             continue_button.click()
-            browser.ele('xpath://*[@id="bdd-password"]', timeout=4).input(os.getenv('PASSWORD'))
+            browser.ele('xpath://*[@id="bdd-password"]', timeout=2.5).input(os.getenv('PASSWORD'))
             await asyncio.sleep(0.5)
             ac.key_down('RETURN')
         # await asyncio.sleep(3)
@@ -147,7 +146,7 @@ async def authorization_scopus(browser, ac):
         print("Login successful")
     except DrissionPage.errors.NoRectError:
         try:
-            elem = browser.ele('@id:contentEditLabel', timeout=4)
+            elem = browser.ele('@id:contentEditLabel', timeout=2.5)
             print ("Page is ready!")
         except TimeoutException:
             browser.quit()
@@ -162,18 +161,18 @@ async def prepare_for_export(browser, result):
     """Поиск по статьям из запроса."""
     # choose show 50
     try:
-        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[2]/div/div/label/select/option[3]', timeout=4)
+        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[2]/div/div/label/select/option[3]', timeout=2.5)
         print ("Page is ready!")
     except TimeoutException:
         print ("Loading took too much time!")
         browser.quit()
     elem.click()
-    await asyncio.sleep(1)
+    await asyncio.sleep(1.5)
 
 
     # show all abstract
     try:
-        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/button/span', timeout=4)
+        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/button/span', timeout=2.5)
         print ("Page is ready!")
     except TimeoutException:
         print ("Loading took too much time!")
@@ -182,7 +181,7 @@ async def prepare_for_export(browser, result):
     await asyncio.sleep(1.5)
 
     try:
-        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table', timeout=4)
+        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table', timeout=2.5)
         print ("Page is ready!")
     except Exception as e:
         print('Error while logging in', e)
@@ -210,9 +209,9 @@ async def prepare_for_export(browser, result):
         traceback.print_exc()
         browser.quit()
 
-    await asyncio.sleep(1)
+    await asyncio.sleep(1.5)
     try:
-        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table/tbody/tr[10]/td/div/div/button', timeout=4)
+        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table/tbody/tr[10]/td/div/div/button', timeout=2.5)
         skip_seventh_row = True
     except NoSuchElementException:
         print("do not skip")
@@ -237,16 +236,16 @@ async def prepare_for_export(browser, result):
 
     try:
         await asyncio.sleep(1)
-        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/div[1]/label/select/option[2]', timeout=4)
+        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/div[1]/label/select/option[2]', timeout=2.5)
         print ("Page is ready!")
     except TimeoutException:
         print ("Loading took too much time!")
         browser.quit()
     elem.click()
-    await asyncio.sleep(1)
+    await asyncio.sleep(1.5)
 
     try:
-        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table', timeout=4)
+        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table', timeout=2.5)
         print ("Page is ready!")
     except TimeoutException:
         print ("Loading took too much time!")
@@ -274,16 +273,16 @@ async def prepare_for_export(browser, result):
     # chage to most cited
 
     try:
-        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/div[1]/label/select/option[3]', timeout=4)
+        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[3]/div/div/div[1]/label/select/option[3]', timeout=2.5)
         print ("Page is ready!")
     except TimeoutException:
         print ("Loading took too much time!")
         browser.quit()
     elem.click()
-    await asyncio.sleep(1)
+    await asyncio.sleep(1.5)
 
     try:
-        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table', timeout=4)
+        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[2]/div[1]/table', timeout=2.5)
         print ("Page is ready!")
     except TimeoutException:
         print ("Loading took too much time!")
@@ -313,7 +312,7 @@ async def export_file(browser, flag, folder_id, result):
     """Экспортирование файла."""
     # export button
     try:
-        elem = browser.ele('xpath://*[@id="container"]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[1]/span/button/span[1]', timeout=4)
+        elem = browser.ele('xpath://*[@id="container"]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[1]/span/button/span[1]', timeout=2.5)
         print ("Page is ready!")
     except TimeoutException:
         print ("Loading took too much time!")
@@ -323,7 +322,7 @@ async def export_file(browser, flag, folder_id, result):
     # await asyncio.sleep(2)
     # "my ris settings" button
     try:
-        browser.ele('RIS', timeout=4).click()
+        browser.ele('RIS', timeout=2.5).click()
         print ("Page is ready!")
     except TimeoutException:
         browser.quit()
@@ -333,7 +332,7 @@ async def export_file(browser, flag, folder_id, result):
 
     # нажатие кнопки выбора кол-ва
     try:
-        elem = browser.ele('xpath://*[@id="select-range"]', timeout=4)
+        elem = browser.ele('xpath://*[@id="select-range"]', timeout=2.5)
         print ("Page is ready!")
     except TimeoutException:
         browser.quit()
@@ -343,8 +342,8 @@ async def export_file(browser, flag, folder_id, result):
 
     #левая и права границы
     try:
-        elem_left = browser.ele('xpath://*[@id="container"]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[1]/div/div/div[1]/div/div/div/div/div/div/div[1]/div/label/input', timeout=4)
-        elem_right = browser.ele('xpath://*[@id="container"]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[1]/div/div/div[1]/div/div/div/div/div/div/div[2]/div/label/input', timeout=4)
+        elem_left = browser.ele('xpath://*[@id="container"]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[1]/div/div/div[1]/div/div/div/div/div/div/div[1]/div/label/input', timeout=2.5)
+        elem_right = browser.ele('xpath://*[@id="container"]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[1]/div/div/div[1]/div/div/div/div/div/div/div[2]/div/label/input', timeout=2.5)
         print ("Page is ready!")
     except TimeoutException:
         browser.quit()
@@ -359,7 +358,7 @@ async def export_file(browser, flag, folder_id, result):
     # "export" (finish) button
     try:
         # await asyncio.sleep(3)
-        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[2]/div/div/span[2]/div/div/button', timeout=4)
+        elem = browser.ele('xpath:/html/body/div/div/div[1]/div/div/div[3]/micro-ui/document-search-results-page/div[1]/section[2]/div/div[2]/div/div[2]/div/div[1]/table/tbody/tr/td[2]/div/div/div[2]/div/div/section/div[2]/div/div/span[2]/div/div/button', timeout=2.5)
         print ("Page is ready!")
     except TimeoutException:
         browser.quit()
@@ -372,11 +371,10 @@ async def export_file(browser, flag, folder_id, result):
 async def download_scopus_file(query: dict, folder_id: str, flag, future):
     """Функция обработки запроса пользователя."""
     result = []
-    print(project_dir)
-    text_query = build_query_by_dialog_data(query)
+    text_query = await build_query_by_dialog_data(query)
     num = '2500'
 
-    co = set_prefs(folder_id=folder_id)
+    co = await set_prefs(folder_id=folder_id)
 
     try:
         browser = ChromiumPage(co)
@@ -384,7 +382,7 @@ async def download_scopus_file(query: dict, folder_id: str, flag, future):
         browser.set.timeouts(base=3, page_load=3)
         browser.get('https://www.scopus.com/search/form.uri?display=advanced')
         cf_bypasser = CloudflareBypasser(browser)
-        cf_bypasser.bypass()
+        await cf_bypasser.bypass()
 
         # await asyncio.sleep(3)
 
@@ -394,12 +392,12 @@ async def download_scopus_file(query: dict, folder_id: str, flag, future):
 
         try:
             try:
-                browser.ele('Clear form', timeout=4).click()
+                browser.ele('Clear form', timeout=2.5).click()
             except:
                 pass
-            elem = browser.ele('@id:contentEditLabel', timeout=4)
+            elem = browser.ele('@id:contentEditLabel', timeout=2.5)
             elem.input(text_query)
-            browser.ele('xpath://*[@id="advSearch"]/span[1]', timeout=4).click()
+            browser.ele('xpath://*[@id="advSearch"]/span[1]', timeout=2.5).click()
         except Exception as e:
             print('Error while logging in', e)
             traceback.print_exc()
@@ -409,7 +407,7 @@ async def download_scopus_file(query: dict, folder_id: str, flag, future):
         
         # await asyncio.sleep(3)
         try:
-            elem = browser.ele('xpath://*[@id="container"]/micro-ui/document-search-results-page/div[1]/section[1]/div[3]/div/div/div[1]/h2', timeout=4)
+            elem = browser.ele('xpath://*[@id="container"]/micro-ui/document-search-results-page/div[1]/section[1]/div[3]/div/div/div[1]/h2', timeout=2.5)
             result.append(True)
         except NoSuchElementException:
             print("net statey")
