@@ -116,18 +116,10 @@ async def go_to_beginning(callback: CallbackQuery, button: Button, manager: Dial
 
 
 async def start_search(callback: CallbackQuery, button: Button, manager: DialogManager):
-    chat_id = str(callback.message.chat.id)
-    username = str(callback.message.chat.username)
-    new_user(chat_id, username)
-
     manager.dialog_data['folder_id'] = uuid.uuid4()
     manager.dialog_data['pressed'] = True
-    if charge_request(chat_id=chat_id):
-        await callback.message.answer("Отлично! Теперь, пожалуйста, подождите. Наш бот уже выполняет ваш запрос. Это займет около минуты. ⏳")
-    else:
-        await callback.message.answer("К сожалению, на вашем балансе закончились запросы.\nПриобретите их сейчас👇🏼")
-        await process_payments_command(callback.message)
-        return
+
+    await callback.message.answer("Отлично! Теперь, пожалуйста, подождите. Наш бот уже выполняет ваш запрос. Это займет около минуты. ⏳")
 
     flag = asyncio.Event()
     future = asyncio.Future()

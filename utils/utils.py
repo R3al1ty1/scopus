@@ -35,7 +35,10 @@ async def build_query_by_dialog_data(query : dict):
     if (query['years'].split()[0] == query['years'].split()[1]):
         result = result + f" AND PUBYEAR = {query['years'].split()[0]}"
     else:
-        result = result + f" AND PUBYEAR > {query['years'].split()[0]}" + f" AND PUBYEAR < {query['years'].split()[1]}"
+        if query['years'].split()[0] == "0":
+            result = result + f" AND PUBYEAR > {query['years'].split()[0]}" + f" AND PUBYEAR < {str(int(query['years'].split()[1]) + 1)}"
+        else:
+            result = result + f" AND PUBYEAR > {str(int(query['years'].split()[0]) - 1)}" + f" AND PUBYEAR < {str(int(query['years'].split()[1]) + 1)}"
 
     langs = []
     langs_str = ''
