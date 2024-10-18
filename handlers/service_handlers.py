@@ -74,7 +74,7 @@ async def generate_payment(callback: CallbackQuery):
     check = InlineKeyboardButton(text="Проверить оплату", callback_data=f'check_{payment_id}')
     keyboard_buy = InlineKeyboardMarkup(inline_keyboard=[[url, check]])
 
-    await callback.message.answer(text="Ваша ссылка на оплату готова!\nПосле оплаты необходимо нажать на кнопку проверки платежа.",
+    await callback.message.answer(text="🔗 Ваша ссылка на оплату готова!\nПосле оплаты нажмите кнопку проверки платежа.",
                          reply_markup=keyboard_buy)
 
 
@@ -86,11 +86,11 @@ async def check_payment(callback: CallbackQuery):
     if res:
         add_requests(callback.message.chat.id, reqs)
         if reqs == 1:
-            await callback.message.answer(f"Оплата прошла успешно, на баланс зачислен 1 запрос.")
+            await callback.message.answer(f"✅ Оплата успешно завершена, на баланс зачислен 1 запрос.")
         else:
-            await callback.message.answer(f"Оплата прошла успешно, на баланс зачислено {reqs} запросов.")
+            await callback.message.answer(f"✅ Оплата успешно завершена, на баланс зачислено {reqs} запросов.")
     else:
-        await callback.message.answer("На данный момент оплата еще не прошла.")
+        await callback.message.answer("⌛️ Оплата еще не прошла.")
 
 
 @router.message(Command(commands='support'), StateFilter(default_state))
@@ -103,4 +103,4 @@ async def process_support_command(message: Message):
 async def process_balance_command(message: Message):
     """Обработчик команды /balance."""
     requests = get_requests(message.chat.id)
-    await message.answer(f"Количество запросов на Вашем счету: {requests}.\n💳 Чтобы пополнить баланс, используйте команду /payments.")
+    await message.answer(f"Количество запросов на вашем счету: {requests}.\n💳 Чтобы пополнить баланс, используйте команду /payments.")
