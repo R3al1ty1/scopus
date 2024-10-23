@@ -113,16 +113,19 @@ async def authorization_scopus(browser, ac):
     """Авторизация Scopus."""
     try:
         try:
-            browser.ele('Accept all cookies', timeout=4).click()
+            elem = browser.ele('Enter your email to continue')
         except:
-            pass
-        try:
-            await asyncio.sleep(2)
-            browser.ele('Maybe later', timeout=4).click()
-        except:
-            pass
-        sign_in_button = browser.ele('Sign in', timeout=4).click()
-        print("Sign-in button clicked")
+            try:
+                browser.ele('Accept all cookies', timeout=4).click()
+            except:
+                pass
+            try:
+                await asyncio.sleep(2)
+                browser.ele('Maybe later', timeout=4).click()
+            except:
+                pass
+            sign_in_button = browser.ele('Sign in', timeout=4).click()
+            print("Sign-in button clicked")
         try:
             browser.ele('xpath://*[@id="bdd-password"]', timeout=4).input(os.getenv('PASSWORD'))
             await asyncio.sleep(0.5)
