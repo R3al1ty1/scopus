@@ -124,8 +124,11 @@ async def authorization_scopus(browser, ac):
                 browser.ele('Maybe later', timeout=4).click()
             except:
                 pass
-            sign_in_button = browser.ele('Sign in', timeout=4).click()
-            print("Sign-in button clicked")
+            try:
+                sign_in_button = browser.ele('Sign in', timeout=4).click()
+                print("Sign-in button clicked")
+            except:
+                pass
         try:
             browser.ele('xpath://*[@id="bdd-password"]', timeout=4).input(os.getenv('PASSWORD'))
             await asyncio.sleep(0.5)
@@ -135,16 +138,19 @@ async def authorization_scopus(browser, ac):
                 browser.ele('Accept all cookies', timeout=4).click()
             except:
                 pass
-            browser.ele('@id:bdd-email', timeout=4).click()
-            browser.ele('@id:bdd-email', timeout=4).input(os.getenv('LOGIN'))
-            browser.ele('@id:bdd-email', timeout=4).click()
-            
-            continue_button = browser.ele('Continue', timeout=4)
-            continue_button.run_js("document.getElementById('bdd-elsPrimaryBtn').removeAttribute('disabled')")
-            continue_button.click()
-            browser.ele('xpath://*[@id="bdd-password"]', timeout=4).input(os.getenv('PASSWORD'))
-            await asyncio.sleep(0.5)
-            ac.key_down('RETURN')
+            try:
+                browser.ele('@id:bdd-email', timeout=4).click()
+                browser.ele('@id:bdd-email', timeout=4).input(os.getenv('LOGIN'))
+                browser.ele('@id:bdd-email', timeout=4).click()
+                
+                continue_button = browser.ele('Continue', timeout=4)
+                continue_button.run_js("document.getElementById('bdd-elsPrimaryBtn').removeAttribute('disabled')")
+                continue_button.click()
+                browser.ele('xpath://*[@id="bdd-password"]', timeout=4).input(os.getenv('PASSWORD'))
+                await asyncio.sleep(0.5)
+                ac.key_down('RETURN')
+            except:
+                print("probably, already logged in")
         # await asyncio.sleep(3)
 
         print("Email entered and submitted")
@@ -411,7 +417,7 @@ async def download_scopus_file(query: dict, folder_id: str, flag, future):
 
         #нашлось или не нашлось
         
-        # await asyncio.sleep(3)
+        await asyncio.sleep(2)
         try:
             elem = browser.ele('xpath://*[@id="container"]/micro-ui/document-search-results-page/div[1]/section[1]/div[3]/div/div/div[1]/h2', timeout=4)
             result.append(True)
