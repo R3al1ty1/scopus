@@ -16,4 +16,5 @@ class Chat(Base):
     __tablename__ = 'user_requests'
     chat_id = Column(Integer, primary_key=True)
     username = Column(String)
-    requests = Column(Integer, default=5)
+    requests = Column(Integer, default=0)
+    trial_start = Column(String)
