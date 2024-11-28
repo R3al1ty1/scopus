@@ -35,7 +35,8 @@ FILTERS_DCT = {
     'Title-abstract-keywords': "TITLE-ABS-KEY",
     'Authors': "AUTH",
     'Title': "TITLE",
-    'Keywords': "KEY"
+    'Keywords': "KEY",
+    '': "",
 }
 
 project_dir = os.path.dirname(os.path.abspath(__file__))

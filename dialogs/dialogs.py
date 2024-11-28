@@ -6,7 +6,7 @@ import os
 
 from typing import Any
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message
+from aiogram.types import Message, InputMediaPhoto
 from aiogram import F
 from aiogram.types import FSInputFile, CallbackQuery
 from aiogram_dialog import Dialog, Window, DialogManager, ShowMode
@@ -15,10 +15,23 @@ from aiogram_dialog.widgets.kbd import Checkbox, Button, Row, Next, ScrollingGro
 from aiogram_dialog.widgets.input import TextInput
 from database.requests import new_user, charge_request, add_requests
 
-from utils.utils import download_scopus_file, downloads_done
+from utils.utils import download_scopus_file, downloads_done, search_for_author_cred, get_author_info
+from utils.unzipper import unzip_pngs
 from handlers.service_handlers import process_payments_command
 from utils.const import PROJECT_DIR
 
+
+class SearchType(StatesGroup):
+    choose_search = State()
+
+
+class FSMFindAuth(StatesGroup):
+    name_or_orcid = State()
+    orcid = State()
+    full_name = State()
+    validate = State()
+    check_auths = State()
+    auth_info = State()
 
 class FSMFindPubs(StatesGroup):
     choose_language = State()         # Состояние ожидания выбора языка
@@ -39,6 +52,8 @@ async def dialog_get_data(dialog_manager: DialogManager, **kwargs):
         filter_type = "Keywords"
     elif dialog_manager.find("authors").is_checked():
         filter_type = "Authors"
+    elif dialog_manager.find("tak").is_checked():
+        filter_type = "Title-abstract-keywords"
 
     return {
         "ru": dialog_manager.find("ru").is_checked(),
@@ -52,6 +67,21 @@ async def dialog_get_data(dialog_manager: DialogManager, **kwargs):
         "pressed": dialog_manager.dialog_data['pressed'],
     }
 
+async def dialog_authors(dialog_manager: DialogManager, **kwargs):
+    
+    if dialog_manager.find("full_name").is_checked():
+        author_search_type = "Фамилия, имя"
+        query = "name_search"
+    elif dialog_manager.find("orcid").is_checked():
+        author_search_type = "ORCID"
+        query = "orcid_search"
+
+
+    return {
+        "auth_search_type": author_search_type,
+        "query": dialog_manager.find(query).get_value(),
+        "pressed": dialog_manager.dialog_data['pressed'],
+    }
 
 async def pubs_found(dialog_manager: DialogManager, **kwargs):
     return {
@@ -60,7 +90,7 @@ async def pubs_found(dialog_manager: DialogManager, **kwargs):
     }
 
 
-async def on_checkbox_click(event, widget, manager: DialogManager):
+async def on_checkbox_click_pubs(event, widget, manager: DialogManager):
     selected_id = widget.widget_id
 
     checkboxes = [
@@ -86,10 +116,89 @@ async def on_checkbox_click(event, widget, manager: DialogManager):
     await manager.update(data={"selected_filter": selected_filter})
 
 
+async def on_checkbox_search(event, widget, manager: DialogManager):
+    selected_id = widget.widget_id
+
+    checkboxes = [
+        manager.dialog().find("author"),
+        manager.dialog().find("article"),
+    ]
+
+    for checkbox in checkboxes:
+        if checkbox.widget_id != selected_id:
+            await checkbox.set_checked(event=event, checked=False, manager=manager)
+        else:
+            await checkbox.set_checked(event=event, checked=True, manager=manager)
+
+    selected_search = {
+        "article": "article",
+        "author": "author",
+    }.get(selected_id, "article")
+
+    await manager.update(data={"search_type": selected_search})
+
+
+async def choose_search_type(callback: CallbackQuery, button: Button, manager: DialogManager):
+    search_type = manager.dialog_data.get("search_type", None)
+    if search_type == "article":
+        manager.dialog_data["search_type"] = ""
+        await manager.start(FSMFindPubs.choose_language)  # Use start() to enter a different state group
+        
+    elif search_type == "author":
+        manager.dialog_data["search_type"] = ""
+        await manager.start(FSMFindAuth.name_or_orcid)
+
+
+async def author_search_type(event, widget, manager: DialogManager, *args, **kwargs):
+    selected_id = widget.widget_id
+
+    checkboxes = [
+        manager.dialog().find("full_name"),
+        manager.dialog().find("orcid"),
+    ]
+
+    for checkbox in checkboxes:
+        if checkbox.widget_id != selected_id:
+            await checkbox.set_checked(event=event, checked=False, manager=manager)
+        else:
+            await checkbox.set_checked(event=event, checked=True, manager=manager)
+
+    selected_search = {
+        "full_name": "full_name",
+        "orcid": "orcid",
+    }.get(selected_id, "full_name")
+
+    await manager.update(data={"selected_type": selected_search})
+
+
+async def set_not_pressed_author(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.dialog_data['pressed'] = False
+    manager.dialog_data['pressed_new'] = False
+    selected_type = manager.dialog_data.get("selected_type")
+    
+    # Переходим к состояниям в зависимости от выбранного типа
+    if selected_type == "full_name":
+        await manager.switch_to(FSMFindAuth.full_name)
+    elif selected_type == "orcid":
+        await manager.switch_to(FSMFindAuth.orcid)
+
+
+async def final_auth_dialog(event, source, manager: DialogManager, *args, **kwargs):
+    await manager.switch_to(FSMFindAuth.validate)
+
+
 async def next_and_set_not_pressed(callback: CallbackQuery, button: Button, manager: DialogManager):
     manager.dialog_data['pressed'] = False
     manager.dialog_data['pressed_new'] = False
-    await manager.next() 
+    selected_type = manager.dialog_data.get("selected_type")
+    
+    # Переходим к состояниям в зависимости от выбранного типа
+    if selected_type == "full_name":
+        await manager.switch_to(FSMFindAuth.full_name)
+    elif selected_type == "orcid":
+        await manager.switch_to(FSMFindAuth.orcid)
+
+    await manager.next()
 
 
 async def error(
@@ -112,10 +221,10 @@ def check_years(text):
 
 
 async def go_to_beginning(callback: CallbackQuery, button: Button, manager: DialogManager):
-    await manager.switch_to(FSMFindPubs.choose_language)  
+    await manager.switch_to(FSMFindAuth.name_or_orcid)  
 
 
-async def start_search(callback: CallbackQuery, button: Button, manager: DialogManager):
+async def start_search_pubs(callback: CallbackQuery, button: Button, manager: DialogManager):
     manager.dialog_data['folder_id'] = uuid.uuid4()
     manager.dialog_data['pressed'] = True
 
@@ -138,11 +247,62 @@ async def start_search(callback: CallbackQuery, button: Button, manager: DialogM
         manager.dialog_data['active_array'] = result[2]
 
         for i in range(len(result[2])):
+            print(manager.find(str(i)).text, manager.find(str(i)))
             manager.find(str(i)).text = Const(str(i + 1) + ". " + str(result[2][i]["Title"]))
         await manager.switch_to(state=FSMFindPubs.check_pubs, show_mode=ShowMode.SEND)
 
     else:
         await callback.message.answer(text="По Вашему запросу не было найдено ни одной статьи.\n\nСпасибо, что воспользовались нашим ботом! 🎉\n\nЧтобы искать снова, напишите команду /search")
+        await manager.done()
+
+
+async def start_search_auth(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.dialog_data['doc_count_max'] = None
+    manager.dialog_data['active_array'] = None
+    manager.dialog_data['folder_id'] = uuid.uuid4()
+    manager.dialog_data['pressed'] = True
+    #callback.message.chat.id
+
+    await callback.message.answer("Отлично! Теперь, пожалуйста, подождите. Наш бот уже выполняет ваш запрос. Это займет немного времени. ⏳")
+
+    flag = asyncio.Event()
+    future = asyncio.Future()
+    manager.dialog_data['future'] = future
+    asyncio.create_task(search_for_author_cred(await dialog_authors(manager), manager.dialog_data['folder_id'], flag, future, manager.dialog_data["selected_type"]))
+    await flag.wait()
+    flag.clear()
+    manager.dialog_data['flag'] = flag
+    result = future.result()
+    manager.dialog_data['browser'] = result[-1]
+    for i in range(50):
+        manager.find(str(i)).text = Const("-")
+    if result[0]:
+
+        manager.dialog_data['doc_count_max'] = result[1]
+        manager.dialog_data['active_array'] = result[1]
+
+        if manager.dialog_data.get("selected_type") == "orcid":
+            await process_auth_click(callback=callback, button=button, manager=manager)
+            await manager.done()
+        else:
+            manager.dialog_data['doc_count_low'] = result[2]
+            manager.dialog_data['hindex_max'] = result[3]
+            manager.dialog_data['hindex_low'] = result[4]
+            manager.dialog_data['author_a'] = result[5]
+            manager.dialog_data['author_z'] = result[6]
+            manager.dialog_data['affil_a'] = result[7]
+            manager.dialog_data['affil_z'] = result[8]
+            manager.dialog_data['city_a'] = result[9]
+            manager.dialog_data['city_z'] = result[10]
+            manager.dialog_data['country_a'] = result[11]
+            manager.dialog_data['country_z'] = result[12]
+
+            for i in range(len(result[1])):
+                manager.find(str(i)).text = Const(str(i + 1) + ". " + str(result[1][i]["Author"]) + " | " + str(result[1][i]["Documents"]) + " | " + str(result[1][i]["Affiliation"]))
+            await manager.switch_to(state=FSMFindAuth.check_auths, show_mode=ShowMode.SEND)
+
+    else:
+        await callback.message.answer(text="По Вашему запросу не было найдено ни одного автора.\n\nСпасибо, что воспользовались нашим ботом! 🎉\n\nЧтобы искать снова, напишите команду /search")
         await manager.done()
 
 
@@ -183,6 +343,101 @@ async def process_pub_click(callback: CallbackQuery, button: Button, manager: Di
 def pub_buttons_create():
     buttons = [Button(Const('-'), id=str(i), on_click=process_pub_click, when=~F["pressed_new"]) for i in range(50)]
     return buttons
+
+
+def auth_buttons_create():
+    buttons = [Button(Const('-'), id=str(i), on_click=process_auth_click, when=~F["pressed_new"]) for i in range(50)]
+    return buttons
+
+
+async def process_auth_click(callback: CallbackQuery, button: Button, manager: DialogManager):
+    mes = await button.text.render_text(data=manager.current_context().dialog_data, manager=manager)
+    if mes != "-":
+        if manager.dialog_data['selected_type'] != "orcid":
+            await callback.message.answer("Автор выбран! Теперь, пожалуйста, подождите. Наш бот уже выполняет ваш запрос. Это займет некоторое время. ⏳")
+
+        button_id = ""
+        if manager.dialog_data.get("selected_type") != "orcid":
+            text = await button.text.render_text(data=manager.current_context().dialog_data, manager=manager)
+            
+        else:
+            text = "1"
+        flag = asyncio.Event()
+        future = asyncio.Future()
+        manager.dialog_data['auth_future'] = future
+
+        if text != "-":
+            if manager.dialog_data.get("selected_type") != "orcid":
+                if text[1] == ".":
+                    button_id = text[0]
+                else:
+                    button_id = text[:2]
+            else:
+                button_id = "1"
+            asyncio.create_task(get_author_info(manager.dialog_data['active_array'][int(button_id)-1]["AuthorID"], 
+                                                manager.dialog_data['folder_id'], 
+                                                manager.dialog_data['browser'], 
+                                                flag, 
+                                                future))
+        await flag.wait()  # Ждём завершения задачи
+        flag.clear()
+        manager.dialog_data['auth_flag'] = flag
+
+        result = future.result()  # Получаем результат задачи
+        if not result[0]:
+            await callback.message.answer("Произошла ошибка при обработке данных.")
+            return
+
+        author_info = result[0]
+        co_authors = result[1]
+
+        files_path = "scopus_files/" + str(manager.dialog_data['folder_id'])
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        full_folder_path = os.path.join(parent_dir, files_path)
+
+        pngs = await unzip_pngs(full_folder_path)  # Если требуется распаковка PNG файлов
+        await asyncio.sleep(2)
+        if pngs:
+            png_files = [os.path.join(full_folder_path, f) for f in os.listdir(full_folder_path) if f.endswith(".png")]
+            ris_files = [os.path.join(full_folder_path, f) for f in os.listdir(full_folder_path) if f.endswith(".ris")]
+            csv_files = [os.path.join(full_folder_path, f) for f in os.listdir(full_folder_path) if f.endswith(".csv")]
+
+            if png_files:
+                print(len(png_files))
+                media = []
+                for file_path in png_files:
+                    media.append(InputMediaPhoto(media=FSInputFile(file_path)))
+
+                # Отправляем все фото как одну группу
+                await callback.message.answer_media_group(media)
+            else:
+                await callback.message.answer("Нет сохранённых графиков.")
+
+            if csv_files:
+                for file_path in csv_files:
+                    await callback.message.answer_document(document=FSInputFile(file_path))
+                
+            if ris_files:
+                for file_path in ris_files:
+                    await callback.message.answer_document(document=FSInputFile(file_path))
+            else:
+                await callback.message.answer("Нет сохранённых файлов.")
+
+        output_message = "📊 Информация об авторе:\n\n"
+        output_message += f"Цитирования: {author_info.get('citations', 'Неизвестно')}\n"
+        output_message += f"Документы: {author_info.get('documents', 'Неизвестно')}\n"
+        output_message += f"h-индекс: {author_info.get('h_index', 'Неизвестно')}\n\n"
+
+        output_message += "👥 Соавторы:\n\n"
+        for co_author in co_authors:
+            output_message += f"- ORCID:  {co_author['id']},   Имя:  {co_author['name']},   Документы:  {co_author['documents']}\n"
+
+        await callback.message.answer(output_message)
+        await callback.message.answer("Спасибо, что воспользовались нашим ботом! 🎉\nЧтобы начать новый поиск, напишите команду /search")
+        if os.path.exists(full_folder_path):
+                shutil.rmtree(full_folder_path)
+        await manager.done()
 
 
 async def download_file(callback: CallbackQuery, button: Button, manager: DialogManager):
@@ -249,9 +504,300 @@ async def sort_by_most_cited(callback: CallbackQuery, button: Button, manager: D
 
     for i in range(len(manager.dialog_data['most_cited'])):
         manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['most_cited'][i]["Title"]))  
-    manager.dialog_data
+    manager.dialog_data['active_array'] = manager.dialog_data['most_cited'] 
+
+
+async def sort_by_doc_count_max(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("🔘 Doc Count (max)")
+    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
+    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
+    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
+    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
+    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
+    manager.find("city_a").text = Const("⚪️ City (A-Z)")
+    manager.find("city_z").text = Const("⚪️ City (Z-A)")
+    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
+    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['doc_count_max'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['doc_count_max'][i]["Author"]) + " | " + str(manager.dialog_data['doc_count_max'][i]["Documents"]) + " | " + str(manager.dialog_data['doc_count_max'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+
+async def sort_by_doc_count_low(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
+    manager.find("doc_count_low").text = Const("🔘 Doc Count (low)")
+    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
+    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
+    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
+    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
+    manager.find("city_a").text = Const("⚪️ City (A-Z)")
+    manager.find("city_z").text = Const("⚪️ City (Z-A)")
+    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
+    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['doc_count_low'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['doc_count_low'][i]["Author"]) + " | " + str(manager.dialog_data['doc_count_low'][i]["Documents"]) + " | " + str(manager.dialog_data['doc_count_low'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_low']
+
+
+async def sort_by_h_index_max(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
+    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
+    manager.find("hindex_max").text = Const("🔘 H-index (max)")
+    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
+    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
+    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
+    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
+    manager.find("city_a").text = Const("⚪️ City (A-Z)")
+    manager.find("city_z").text = Const("⚪️ City (Z-A)")
+    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
+    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['hindex_max'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['hindex_max'][i]["Author"]) + " | " + str(manager.dialog_data['hindex_max'][i]["Documents"]) + " | " + str(manager.dialog_data['hindex_max'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['hindex_max']
+
+
+async def sort_by_h_index_low(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
+    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
+    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low").text = Const("🔘 H-index (low)")
+    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
+    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
+    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
+    manager.find("city_a").text = Const("⚪️ City (A-Z)")
+    manager.find("city_z").text = Const("⚪️ City (Z-A)")
+    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
+    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['hindex_low'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['hindex_low'][i]["Author"]) + " | " + str(manager.dialog_data['hindex_low'][i]["Documents"]) + " | " + str(manager.dialog_data['hindex_low'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['hindex_low']
+
+
+async def sort_by_author_a(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
+    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
+    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
+    manager.find("author_a").text = Const("🔘 Author (A-Z)")
+    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
+    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
+    manager.find("city_a").text = Const("⚪️ City (A-Z)")
+    manager.find("city_z").text = Const("⚪️ City (Z-A)")
+    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
+    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['author_a'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['author_a'][i]["Author"]) + " | " + str(manager.dialog_data['author_a'][i]["Documents"]) + " | " + str(manager.dialog_data['author_a'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['author_a']
+
+
+async def sort_by_author_z(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
+    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
+    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
+    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
+    manager.find("author_z").text = Const("🔘 Author (Z-A)")
+    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
+    manager.find("city_a").text = Const("⚪️ City (A-Z)")
+    manager.find("city_z").text = Const("⚪️ City (Z-A)")
+    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
+    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['author_z'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['author_z'][i]["Author"]) + " | " + str(manager.dialog_data['author_z'][i]["Documents"]) + " | " + str(manager.dialog_data['author_z'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['author_z']
+
+
+async def sort_by_affil_a(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
+    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
+    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
+    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
+    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
+    manager.find("affil_a").text = Const("🔘 Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
+    manager.find("city_a").text = Const("⚪️ City (A-Z)")
+    manager.find("city_z").text = Const("⚪️ City (Z-A)")
+    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
+    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['affil_a'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['affil_a'][i]["Author"]) + " | " + str(manager.dialog_data['affil_a'][i]["Documents"]) + " | " + str(manager.dialog_data['affil_a'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['affil_a']
+
+
+async def sort_by_affil_z(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
+    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
+    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
+    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
+    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
+    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("🔘 Affiliation (Z-A)")
+    manager.find("city_a").text = Const("⚪️ City (A-Z)")
+    manager.find("city_z").text = Const("⚪️ City (Z-A)")
+    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
+    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['affil_z'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['affil_z'][i]["Author"]) + " | " + str(manager.dialog_data['affil_z'][i]["Documents"]) + " | " + str(manager.dialog_data['affil_z'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['affil_z']
+
+
+async def sort_by_city_a(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
+    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
+    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
+    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
+    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
+    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
+    manager.find("city_a").text = Const("🔘 City (A-Z)")
+    manager.find("city_z").text = Const("⚪️ City (Z-A)")
+    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
+    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['city_a'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['city_a'][i]["Author"]) + " | " + str(manager.dialog_data['city_a'][i]["Documents"]) + " | " + str(manager.dialog_data['city_a'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['city_a']
+
+
+async def sort_by_city_z(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
+    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
+    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
+    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
+    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
+    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
+    manager.find("city_a").text = Const("⚪️ City (A-Z)")
+    manager.find("city_z").text = Const("🔘 City (Z-A)")
+    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
+    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['city_z'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['city_z'][i]["Author"]) + " | " + str(manager.dialog_data['city_z'][i]["Documents"]) + " | " + str(manager.dialog_data['city_z'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['city_z']
+
+
+async def sort_by_country_a(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
+    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
+    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
+    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
+    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
+    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
+    manager.find("city_a").text = Const("⚪️ City (A-Z)")
+    manager.find("city_z").text = Const("⚪️ City (Z-A)")
+    manager.find("country_a").text = Const("🔘 Country (A-Z)")
+    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['country_a'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['country_a'][i]["Author"]) + " | " + str(manager.dialog_data['country_a'][i]["Documents"]) + " | " + str(manager.dialog_data['country_a'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['country_a']
+
+
+async def sort_by_country_z(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
+    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
+    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
+    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
+    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
+    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
+    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
+    manager.find("city_a").text = Const("⚪️ City (A-Z)")
+    manager.find("city_z").text = Const("⚪️ City (Z-A)")
+    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
+    manager.find("country_z").text = Const("🔘 Country (Z-A)")
+
+
+    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
+
+    for i in range(len(manager.dialog_data['country_z'])):
+        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['country_z'][i]["Author"]) + " | " + str(manager.dialog_data['country_z'][i]["Documents"]) + " | " + str(manager.dialog_data['country_z'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['country_z']
+
 
 main_menu = Dialog(
+    Window(
+        Const(
+            "Выберите, что ищем: статью или автора."
+        ),
+        Row(
+            Checkbox(
+                Const("☑️ Статья"),
+                Const("⬜ Статья"),
+                id="article",
+                default=False,
+                on_click=on_checkbox_search,
+            ),
+            Checkbox(
+                Const("☑️ Автор"),
+                Const("⬜ Автор"),
+                id="author",
+                default=False,
+                on_click=on_checkbox_search,
+            )
+        ),
+        Button(text=Const("Дальше"), id="save", on_click=choose_search_type),
+        state=SearchType.choose_search
+    ),
+)
+
+authors_search_dialog = Dialog(
     Window(
         Const(
             "Выберите, если нужно, языки для фильтрации публикаций."
@@ -323,8 +869,8 @@ main_menu = Dialog(
                 Const("☑️ Title-abs-key"),
                 Const("⬜ Title-abs-key"),
                 id="tak",
-                default=True,  # so it will be checked by default,
-                on_click=on_checkbox_click,
+                default=False,  # so it will be checked by default,
+                on_click=on_checkbox_click_pubs,
             ),
         ),
         Row(
@@ -333,21 +879,21 @@ main_menu = Dialog(
                 Const("⬜ Title"),
                 id="title",
                 default=False,  # so it will be checked by default,
-                on_click=on_checkbox_click,
+                on_click=on_checkbox_click_pubs,
             ),
             Checkbox(
                 Const("☑️ Keywords"),
                 Const("⬜ Keywords"),
                 id="keywords",
                 default=False,  # so it will be checked by default,
-                on_click=on_checkbox_click,
+                on_click=on_checkbox_click_pubs,
             ),
             Checkbox(
                 Const("☑️ Authors"),
                 Const("⬜ Authors"),
                 id="authors",
                 default=False,  # so it will be checked by default,
-                on_click=on_checkbox_click,
+                on_click=on_checkbox_click_pubs,
             ),
         ),
         Button(text=Const("Дальше"), id="save", on_click=Next()),
@@ -376,7 +922,7 @@ main_menu = Dialog(
     Текст запроса: "{query}" 
     """),
         Button(text=Const("🔁 Заново"), id="again", on_click=go_to_beginning, when=~F["pressed"]),
-        Button(text=Const("▶️ Поиск"), id="search", on_click=start_search, when=~F["pressed"]),
+        Button(text=Const("▶️ Поиск"), id="search", on_click=start_search_pubs, when=~F["pressed"]),
         state=FSMFindPubs.validate,
         getter=dialog_get_data  # here we specify data getter for dialog
     ),
@@ -398,5 +944,94 @@ main_menu = Dialog(
         state=FSMFindPubs.check_pubs,
         getter=pubs_found
     ),
-    
+)
+
+author_search_dialog = Dialog(
+    Window(
+        Const(
+            "Выберите тип поиска: по имени или по ORCID. 🔍"
+        ),
+        Row(
+            Checkbox(
+                Const("☑️ Фамилия, имя"),
+                Const("⬜ Фамилия, имя"),
+                id="full_name",
+                default=False,  # so it will be checked by default,
+                on_click=author_search_type,
+            ),
+            Checkbox(
+                Const("☑️ ORCID"),
+                Const("⬜ ORCID"),
+                id="orcid",
+                default=False,  # so it will be checked by default,
+                on_click=author_search_type,
+            ),
+        ),
+        Button(text=Const("Дальше"), id="save", on_click=set_not_pressed_author),
+        state=FSMFindAuth.name_or_orcid,
+    ),
+    Window(
+        Const("Пожалуйста, введите фамилию и имя через пробел. 🔍"),
+        TextInput(
+            id="name_search",
+            on_success=final_auth_dialog,
+        ),
+        state=FSMFindAuth.full_name,
+    ),
+    Window(
+        Const("Пожалуйста, введите ORCID. 🔍"),
+        TextInput(
+            id="orcid_search",
+            on_success=final_auth_dialog,
+        ),
+        state=FSMFindAuth.orcid,
+    ),
+    Window(
+        Format(
+        """Запрос успешно сформирован! ✅\n\nПроверьте корректность введённых данных — если есть опечатки, результат может отсутствовать, а запрос будет списан. 🧐
+
+    Фильтр: {auth_search_type}
+    ----------------
+    Текст запроса: "{query}" 
+    """),
+        Button(text=Const("🔁 Заново"), id="again", on_click=go_to_beginning, when=~F["pressed"]),
+        Button(text=Const("▶️ Поиск"), id="search", on_click=start_search_auth, when=~F["pressed"]),
+        state=FSMFindAuth.validate,
+        getter=dialog_authors  # here we specify data getter for dialog
+    ),
+    Window(
+        Row (
+            Button(text=Const("🔘 Doc Count (max)"), id="doc_count_max", on_click=sort_by_doc_count_max),
+            Button(text=Const("⚪️ Doc Count (low)"), id="doc_count_low", on_click=sort_by_doc_count_low),    
+        ),
+        Row(
+            Button(text=Const("⚪️ H-index (max)"), id="hindex_max", on_click=sort_by_h_index_max),
+            Button(text=Const("⚪️ H-index (low)"), id="hindex_low", on_click=sort_by_h_index_low),
+        ),
+        Row(
+            Button(text=Const("⚪️ Author (A-Z)"), id="author_a", on_click=sort_by_author_a),
+            Button(text=Const("⚪️ Author (Z-A)"), id="author_z", on_click=sort_by_author_z),
+        ),
+        Row(
+            Button(text=Const("⚪️ Affiliation (A-Z)"), id="affil_a", on_click=sort_by_affil_a),
+            Button(text=Const("⚪️ Affiliation (Z-A)"), id="affil_z", on_click=sort_by_affil_z),
+        ),
+        Row(
+            Button(text=Const("⚪️ City (A-Z)"), id="city_a", on_click=sort_by_city_a),
+            Button(text=Const("⚪️ City (Z-A)"), id="city_z", on_click=sort_by_city_z),
+            Button(text=Const("⚪️ Country (A-Z)"), id="country_a", on_click=sort_by_country_a),
+            Button(text=Const("⚪️ Country (Z-A)"), id="country_z", on_click=sort_by_country_z)
+        ),
+        Format("🔍 По вашему запросу найдены авторы\n\n📋 Рейтинг соответствующих:\n\nФамилия, имя | Количество документов | Учреждение"),
+        ScrollingGroup(
+            *auth_buttons_create(),
+            id="numbers",
+            width=1,
+            height=8,
+        ),
+        #Button(text=Const("Скачать файл со всеми статьями 👑"), id="download", on_click=download_file, when=~F["pressed_new"]),
+        #Button(text=Const("Не скачивать файл"), id="do_not_download", on_click=do_not_download_file, when=~F["pressed_new"]),
+        state=FSMFindAuth.check_auths,
+        #getter=auths_found
+    ),
 )
