@@ -774,7 +774,7 @@ async def sort_by_country_z(callback: CallbackQuery, button: Button, manager: Di
 main_menu = Dialog(
     Window(
         Const(
-            "Выберите, что ищем: статью или автора."
+            "Выберите, что ищем: статью или автора. 🔍"
         ),
         Row(
             Checkbox(
