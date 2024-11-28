@@ -4,6 +4,7 @@ import random
 import pandas as pd
 import io
 import os
+import re
 import math
 import asyncio
 import DrissionPage
@@ -14,6 +15,7 @@ from bypass.CloudflareBypasser import CloudflareBypasser
 from DrissionPage import ChromiumPage, ChromiumOptions
 from DrissionPage.common import Actions
 from dotenv import load_dotenv
+from bs4 import BeautifulSoup
 
 from utils.const import PROJECT_DIR, FILTERS_DCT
 
@@ -66,6 +68,91 @@ async def build_query_by_dialog_data(query : dict):
     print(result)
     return result
 
+
+async def get_co_authors(content, browser):
+    try:
+        soup = BeautifulSoup(content, "html.parser")
+
+        rows = soup.find_all("tr", class_="Table-module__lCVi9")
+
+        data = []
+        for row in rows:
+            checkbox = row.find("input", {"type": "checkbox"})
+            author_id = checkbox["id"] if checkbox else None
+
+            name_span = row.select_one("td:nth-of-type(2) a span")
+            name = name_span.get_text(strip=True) if name_span else None
+
+            doc_count_span = row.select_one("td:nth-of-type(3) a span")
+            doc_count = doc_count_span.get_text(strip=True) if doc_count_span else None
+
+            if author_id and name and doc_count:
+                data.append({
+                    "id": author_id,
+                    "name": name,
+                    "documents": doc_count
+                })
+        for i in range(len(data)):
+            try:
+                auth_id = data[i]["id"]
+                print(auth_id)
+                browser.get(f"https://www.scopus.com/authid/detail.uri?authorId={auth_id}")
+                orcid = browser.ele('xpath://*[@id="scopus-author-profile-page-control-microui__general-information-content"]/div[2]/ul/li[3]').text
+                orcids_lst = orcid.split("/")
+                orcid = orcids_lst[-1]
+                if orcid.count("-") == 3:
+                    data[i]["id"] = orcid[:19]
+                else:
+                    data[i]["id"] = "-"
+                browser.back()
+            except:
+                traceback.print_exc()
+
+        return data
+
+    except:
+        return None
+
+
+async def get_menu_name(elem_html):
+    soup = BeautifulSoup(elem_html, 'html.parser')
+
+    # Находим элемент <button> с атрибутом aria-controls
+    button = soup.find('button', attrs={'aria-controls': True})
+
+    # Извлекаем значение aria-controls
+    if button:
+        aria_controls_value = button['aria-controls']
+        if aria_controls_value.startswith("menu"):
+            return aria_controls_value
+    else:
+        return None
+
+async def export_auth_docs(browser, doc_type):
+    try:
+        browser.scroll.down(200)
+        await asyncio.sleep(2)
+        exp = browser.ele('xpath://*[@id="documents-panel"]/div/div/div/div[2]/div[2]/ul/li[1]/div/span/button')
+        displayed = exp.wait.displayed()
+        if displayed:
+            exp.click()
+        await asyncio.sleep(1)
+        menu_html = browser.ele('xpath://*[@id="documents-panel"]/div/div/div/div[2]/div[2]/ul/li[1]/div/span').html
+        menu_name = await get_menu_name(menu_html)
+        if menu_name:
+            if doc_type == "csv":
+                browser.ele(f'xpath://*[@id="{menu_name}"]/div[1]/button[1]', timeout=4).click()
+            else:
+                browser.ele(f'xpath://*[@id="{menu_name}"]/div[1]/button[2]', timeout=4).click()
+            await asyncio.sleep(1)
+            browser.ele('xpath://*[@id="documents-panel"]/div/div/div/div[2]/div[2]/ul/li[1]/div[2]/div/div/section/div[1]/div/div/div/div/div[3]/span/label/input').click()
+            browser.ele('xpath://*[@id="documents-panel"]/div/div/div/div[2]/div[2]/ul/li[1]/div[2]/div/div/section/div[2]/div/div/span[2]/div/div/button').click()
+            return True
+        return False
+    except:
+        traceback.print_exc()
+        return False
+
 #global warning AND PUBYEAR > 1971 AND PUBYEAR < 2026 AND ( LIMIT-TO ( LANGUAGE , "English" ) OR LIMIT-TO ( LANGUAGE , "Russian" ) ) AND ( LIMIT-TO ( DOCTYPE , "cp" ) OR LIMIT-TO ( DOCTYPE , "re" ) OR LIMIT-TO ( DOCTYPE , "ar" ) )
 
 async def downloads_done(folder_id):
@@ -108,13 +195,21 @@ async def set_prefs(folder_id):
     
     return co
 
-
 async def authorization_scopus(browser, ac):
     """Авторизация Scopus."""
     try:
         try:
             elem = browser.ele('Enter your email to continue')
         except:
+            try:
+                sign_in_button = browser.ele('Sign in', timeout=4).click(by_js=True)
+                print("Sign-in button clicked")
+            except:
+                try:
+                    sign_in_button = browser.ele('xpath://*[@id="signin_link_move"]', timeout=4).click(by_js=True)
+                    print("Sign-in button clicked")
+                except:
+                    pass
             try:
                 browser.ele('Accept all cookies', timeout=4).click()
             except:
@@ -123,13 +218,19 @@ async def authorization_scopus(browser, ac):
                 await asyncio.sleep(2)
                 browser.ele('Maybe later', timeout=4).click()
             except:
-                pass
-            try:
-                sign_in_button = browser.ele('Sign in', timeout=4).click()
-                print("Sign-in button clicked")
-            except:
-                pass
+                browser.ele('×', timeout=4).click()
+            finally:
+                try:
+                    sign_in_button = browser.ele('Sign in', timeout=4).click()
+                    print("Sign-in button clicked")
+                except:
+                    try:
+                        sign_in_button = browser.ele('xpath://*[@id="signin_link_move"]', timeout=4).click()
+                        print("Sign-in button clicked")
+                    except:
+                        pass
         try:
+            await asyncio.sleep(2)
             browser.ele('xpath://*[@id="bdd-password"]', timeout=4).input(os.getenv('PASSWORD'))
             await asyncio.sleep(0.5)
             ac.key_down('RETURN')
@@ -458,6 +559,385 @@ async def download_scopus_file(query: dict, folder_id: str, flag, future):
     except:
         print("kakoyto trouble")
         traceback.print_exc()
+        future.set_result([False])
+        browser.quit()
+        flag.set()
+        return
+
+
+async def search_for_author_cred(query: dict, folder_id: str, flag, future, search_type):
+    result = []
+    first_name = ""
+    last_name = ""
+    orcid = ""
+    text_query = query["query"]
+    query_list = text_query.split(" ")
+    if len(text_query.split(" ")) > 1:
+        last_name = query_list[0]
+        first_name = query_list[1]
+    else:
+        orcid = query["query"]
+
+    
+    num = '2500'
+
+    co = await set_prefs(folder_id=folder_id)
+
+    try:
+        browser = ChromiumPage(co)
+        ac = Actions(browser)
+        browser.set.timeouts(base=3, page_load=3)
+        browser.get('https://www.scopus.com/search/form.uri?display=basic&zone=header&origin=searchadvanced#author')
+        cf_bypasser = CloudflareBypasser(browser)
+        await cf_bypasser.bypass()
+
+        await authorization_scopus(browser=browser, ac=ac)
+        await asyncio.sleep(2)
+        try:
+            browser.ele('xpath://*[@id="author"]', timeout=4).click()
+        except:
+            pass
+        await asyncio.sleep(2)
+        if orcid:
+            browser.ele('xpath://*[@id="scopus-author-search-form"]/div[1]/ul[1]/li/label/select').click()
+            browser.ele('xpath://*[@id="scopus-author-search-form"]/div[1]/ul[1]/li/label/select/option[2]').click()
+            await asyncio.sleep(2)
+            browser.ele('xpath://*[@id="scopus-author-search-form"]/div[2]/div/label/input').input(orcid)
+        else:
+            try:
+                browser.ele('xpath://*[@id="scopus-author-search-form"]/div[2]/div[2]/div/label/input').input(first_name)
+            except:
+                try:
+                    browser.ele('xpath://*[@id="scopus-author-search-form-experimental"]/div[2]/div[2]/div/label/input').input(first_name)
+                except:
+                    pass
+            try:
+                browser.ele('xpath://*[@id="scopus-author-search-form"]/div[2]/div[1]/div/label/input').input(last_name)
+            except:
+                try:
+                    browser.ele('xpath://*[@id="scopus-author-search-form-experimental"]/div[2]/div[1]/div/label/input').input(last_name)
+                except:
+                    pass
+        try:
+            browser.ele('xpath://*[@id="scopus-author-search-form"]/div[3]/div[2]/button').click()
+        except:
+            try:
+                browser.ele('xpath://*[@id="scopus-author-search-form-experimental"]/div[3]/div[2]/button').click()
+            except:
+                pass
+        await asyncio.sleep(2)
+        
+        browser.ele('xpath://*[@id="resultsPerPage-button"]/span[1]').click()
+        browser.ele('xpath://*[@id="ui-id-14"]').click()
+
+        await asyncio.sleep(2)        
+
+        # Извлечение таблицы и начальная настройка
+        
+        auths_num = browser.ele('xpath://*[@id="authorResultsOptionBar"]/div/div/header/h1/span').text
+        result = []  # Массив для хранения результатов
+        i = 0
+        result.append(auths_num)
+        if search_type != "orcid":
+            for j in range(1, 13):
+                try:
+                    browser.ele('xpath://*[@id="navLoad-button"]').click()
+                    browser.ele(f'xpath://*[@id="navLoad-menu"]/li[{j}]').click()
+                    elem = browser.ele('xpath://*[@id="srchResultsList"]')
+                    html_content = elem.html
+                    await asyncio.sleep(1.5)
+                    i = 0
+                    soup = BeautifulSoup(html_content, 'html.parser')
+                    table = soup.find("table", id="srchResultsList")
+                    rows = table.find_all("tr", class_="searchArea")
+                    await asyncio.sleep(2)
+                    result.append([])
+
+                    # Проход по каждой строке таблицы, содержащей данные авторов
+                    while i < len(rows):
+                        # Создаем словарь для данных текущего автора
+                        author_data = {}
+
+                        # Инициализация переменной input_tag
+                        input_tag = None
+
+                        # Извлечение ID автора
+                        checkbox_div = rows[i].find("div", class_="checkbox")
+                        if checkbox_div:
+                            input_tag = checkbox_div.find("input", {"value": True})
+                            author_data['AuthorID'] = input_tag['value'] if input_tag else "N/A"
+
+                        # Извлечение имени автора из `authorResultsNamesCol` или `data-name` в `input`
+                        author_col = rows[i].find("td", class_="authorResultsNamesCol")
+                        if author_col and author_col.find("a"):
+                            author_data['Author'] = author_col.find("a").text.strip()
+                        else:
+                            # Если имени автора нет в `authorResultsNamesCol`, берем из `input`
+                            author_data['Author'] = input_tag['data-name'] if input_tag else "N/A"
+                        
+                        # Извлечение порядкового номера автора из `label`
+                        if input_tag:
+                            input_id = input_tag['id']
+                            label_tag = rows[i].find("label", {"for": input_id})
+                            author_data['Order'] = label_tag.text.strip() if label_tag else "N/A"
+
+                        # Извлечение данных из других столбцов
+                        documents_col = rows[i].find("td", id=lambda x: x and x.startswith("resultsDocumentsCol"))
+                        author_data['Documents'] = documents_col.text.strip() if documents_col else "N/A"
+
+                        affiliation_col = rows[i].find("td", class_="dataCol5")
+                        if affiliation_col:
+                            affiliation_text = affiliation_col.find("span", class_="anchorText")
+                            author_data['Affiliation'] = affiliation_text.text.strip() if affiliation_text else "N/A"
+
+                        city_col = rows[i].find("td", class_="dataCol6")
+                        author_data['City'] = city_col.text.strip() if city_col else "N/A"
+
+                        country_col = rows[i].find("td", class_="dataCol7 alignRight")
+                        author_data['Country'] = country_col.text.strip() if country_col else "N/A"
+
+                        # Добавление данных автора в текущую группу результатов
+                        result[j].append(author_data)
+
+                        # Увеличение счетчика для перехода к следующему автору
+                        i += 1
+                except:
+                    pass
+        else:
+            elem = browser.ele('xpath://*[@id="srchResultsList"]')
+            html_content = elem.html
+            await asyncio.sleep(1.5)
+            i = 0
+            soup = BeautifulSoup(html_content, 'html.parser')
+            table = soup.find("table", id="srchResultsList")
+            rows = table.find_all("tr", class_="searchArea")
+            await asyncio.sleep(2)
+            result.append([])
+
+            # Проход по каждой строке таблицы, содержащей данные авторов
+            while i < len(rows):
+                # Создаем словарь для данных текущего автора
+                author_data = {}
+
+                # Инициализация переменной input_tag
+                input_tag = None
+
+                # Извлечение ID автора
+                checkbox_div = rows[i].find("div", class_="checkbox")
+                if checkbox_div:
+                    input_tag = checkbox_div.find("input", {"value": True})
+                    author_data['AuthorID'] = input_tag['value'] if input_tag else "N/A"
+
+                # Извлечение имени автора из `authorResultsNamesCol` или `data-name` в `input`
+                author_col = rows[i].find("td", class_="authorResultsNamesCol")
+                if author_col and author_col.find("a"):
+                    author_data['Author'] = author_col.find("a").text.strip()
+                else:
+                    # Если имени автора нет в `authorResultsNamesCol`, берем из `input`
+                    author_data['Author'] = input_tag['data-name'] if input_tag else "N/A"
+                
+                # Извлечение порядкового номера автора из `label`
+                if input_tag:
+                    input_id = input_tag['id']
+                    label_tag = rows[i].find("label", {"for": input_id})
+                    author_data['Order'] = label_tag.text.strip() if label_tag else "N/A"
+
+                # Извлечение данных из других столбцов
+                documents_col = rows[i].find("td", id=lambda x: x and x.startswith("resultsDocumentsCol"))
+                author_data['Documents'] = documents_col.text.strip() if documents_col else "N/A"
+
+                affiliation_col = rows[i].find("td", class_="dataCol5")
+                if affiliation_col:
+                    affiliation_text = affiliation_col.find("span", class_="anchorText")
+                    author_data['Affiliation'] = affiliation_text.text.strip() if affiliation_text else "N/A"
+
+                city_col = rows[i].find("td", class_="dataCol6")
+                author_data['City'] = city_col.text.strip() if city_col else "N/A"
+
+                country_col = rows[i].find("td", class_="dataCol7 alignRight")
+                author_data['Country'] = country_col.text.strip() if country_col else "N/A"
+
+                # Добавление данных автора в текущую группу результатов
+                result[1].append(author_data)
+
+                # Увеличение счетчика для перехода к следующему автору
+                i += 1
+        # Вывод результата для проверки
+        result.append(browser)
+
+
+        future.set_result(result)
+        flag.set()
+    except:
+        traceback.print_exc()
+        
+        future.set_result([False])
+        browser.quit()
+        flag.set()
+        return
+
+
+async def get_author_info(author_id: str, folder_id: str, browser, flag, future):
+
+    co = await set_prefs(folder_id=folder_id)
+    res = []
+    author_info = {}
+    try:
+        browser.get(f'https://www.scopus.com/authid/detail.uri?authorId={author_id}')
+        await asyncio.sleep(2)
+        try:
+            browser.ele('Accept all cookies', timeout=4).click()
+        except:
+            pass
+        try:
+            citNum = browser.ele('xpath://*[@id="scopus-author-profile-page-control-microui__general-information-content"]/div[2]/section/div/div[1]/div/div/div/div[1]/span').text
+            citDoc = browser.ele('xpath://*[@id="scopus-author-profile-page-control-microui__general-information-content"]/div[2]/section/div/div[1]/div/div/div/div[2]/span/p').text
+            citDoc = re.sub(r'by(\d)', r'by \1', citDoc)
+            s = citNum + " " + citDoc
+            author_info["citations"] = s
+        except:
+            pass
+        try:
+            docNum = browser.ele('xpath://*[@id="scopus-author-profile-page-control-microui__general-information-content"]/div[2]/section/div/div[2]/div/div/div/div[1]/span').text
+            author_info["documents"] = docNum
+        except:
+            pass
+        try:
+            hIndex = browser.ele('xpath://*[@id="scopus-author-profile-page-control-microui__general-information-content"]/div[2]/section/div/div[3]/div/div/div/div[1]/span').text
+            author_info["h_index"] = hIndex
+        except:
+            pass
+
+        res.append(author_info)
+
+        csv = await export_auth_docs(browser=browser, doc_type="csv")
+        await asyncio.sleep(2)
+
+        ris = await export_auth_docs(browser=browser, doc_type="ris")
+        await asyncio.sleep(2)
+        """
+        Делаем соавторов
+        """
+        try:
+            browser.ele('xpath://*[@id="co-authors"]').click()
+            await asyncio.sleep(1.5)
+        except:
+            pass
+
+        try:
+            elem = browser.ele('xpath://*[@id="showAllCoAuthors"]/form/table')
+            content = elem.html
+        except:
+            pass
+
+        co_authors = await get_co_authors(content=content, browser=browser)
+
+        res.append(co_authors)
+        browser.get(f'https://www.scopus.com/authid/detail.uri?authorId={author_id}')
+        await asyncio.sleep(2)
+        """
+        Дальше идут графики
+        """
+    
+        try:
+            browser.ele('xpath://*[@id="AuthorProfilePage_AnalyzeAuthorOutput"]').click()
+            await asyncio.sleep(5)
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="export_results"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="row1"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="export_results-data"]/span[2]/span/button[2]').click()
+        except:
+            pass
+
+        # =======================================
+        await asyncio.sleep(1.5)
+        try:
+            browser.ele('xpath://*[@id="analyzeType-miniChart"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="export_results"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="row1"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="export_results-data"]/span[2]/span/button[2]').click()
+        except:
+            pass
+        # =======================================
+        await asyncio.sleep(1.5)
+        try:
+            browser.ele('xpath://*[@id="analyzeYear-miniChart"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="export_results"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="row1"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="export_results-data"]/span[2]/span/button[2]').click()
+        except:
+            pass
+        # =======================================
+        await asyncio.sleep(1.5)
+        try:
+            browser.ele('xpath://*[@id="analyzeSubject-miniChart"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="export_results"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="row1"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="export_results-data"]/span[2]/span/button[2]').click()
+        except:
+            pass
+        # =======================================
+        await asyncio.sleep(1.5)
+        try:
+            browser.ele('xpath://*[@id="analyzeHindex-miniGraph"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="export_results"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="row1"]').click()
+        except:
+            pass
+        try:
+            browser.ele('xpath://*[@id="export_results-data"]/span[2]/span/button[2]').click()
+        except:
+            pass
+
+        await asyncio.sleep(1.5)
+        await asyncio.sleep(1.5)
+        future.set_result(res)
+        flag.set()
+        browser.quit()
+    except:
+        traceback.print_exc()
+        
         future.set_result([False])
         browser.quit()
         flag.set()
