@@ -261,8 +261,7 @@ async def start_search_pubs(callback: CallbackQuery, button: Button, manager: Di
         manager.dialog_data['active_array'] = result[2]
 
         for i in range(len(result[2])):
-            print(manager.find(str(i)).text, manager.find(str(i)))
-            manager.find(str(i)).text = Const(str(i + 1) + ". " + str(result[2][i]["Title"]))
+            manager.find(f"pub_{i}").text = Const(str(i + 1) + ". " + str(result[2][i]["Title"]))
         await manager.switch_to(state=FSMGeneral.check_pubs, show_mode=ShowMode.SEND)
 
     else:
@@ -292,6 +291,8 @@ async def start_search_auth(callback: CallbackQuery, button: Button, manager: Di
         manager.dialog_data['browser'] = result[-1]
         for i in range(50):
             manager.find(str(i)).text = Const("-")
+        for i in range(50):
+            manager.find(f"key_{i}").text = Const("-")
         if result[0] or manager.dialog_data.get("selected_type") == "keywords":
 
             if manager.dialog_data.get("selected_type") == "orcid":
@@ -373,7 +374,7 @@ async def process_pub_click(callback: CallbackQuery, button: Button, manager: Di
 *Кол-во цитированиий*
         {manager.dialog_data['active_array'][int(callback.data)]['Citations'].replace('_', '-').replace('*', '✵')  }
 
-Чтобы виджет с выбором статей опустила вниз диалога, отправьте любое сообщение.
+\nЧтобы виджет с выбором статей опустился вниз диалога, отправьте любое сообщение. ⬇️
 
         """, 4096)
         for j in range(len(list_to_print)):
@@ -382,7 +383,7 @@ async def process_pub_click(callback: CallbackQuery, button: Button, manager: Di
 
 
 def pub_buttons_create():
-    buttons = [Button(Const('-'), id=str(i), on_click=process_pub_click, when=~F["pressed_new"]) for i in range(50)]
+    buttons = [Button(Const('-'), id=f"pub_{i}", on_click=process_pub_click, when=~F["pressed_new"]) for i in range(50)]
     return buttons
 
 
@@ -490,7 +491,7 @@ async def download_file(callback: CallbackQuery, button: Button, manager: Dialog
     manager.dialog_data['pressed_new'] = True
     folder_path = f"{PROJECT_DIR}/scopus_files/{manager.dialog_data['folder_id']}"
     try:
-        await callback.message.answer("Отлично! Подождите, пожалуйста, пока мы скачиваем файл — это может занять некоторое время")
+        await callback.message.answer("Отлично! Подождите, пожалуйста, пока мы скачиваем файл — это может занять некоторое время. ⏳")
         manager.dialog_data['flag'].set()  # установить флаг для начала загрузки
         await asyncio.sleep(1)
         await downloads_done(manager.dialog_data['folder_id'])
@@ -525,7 +526,7 @@ async def sort_by_newest(callback: CallbackQuery, button: Button, manager: Dialo
     manager.dialog_data['active_array'] = manager.dialog_data['most_cited']
 
     for i in range(len(manager.dialog_data['newest'])):
-        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['newest'][i]["Title"]))
+        manager.find(f"pub_{i}").text = Const(str(i + 1) + ". " + str(manager.dialog_data['newest'][i]["Title"]))
     manager.dialog_data['active_array'] = manager.dialog_data['newest']   
 
 
@@ -537,7 +538,7 @@ async def sort_by_oldest(callback: CallbackQuery, button: Button, manager: Dialo
     manager.dialog_data['active_array'] = manager.dialog_data['most_cited']
 
     for i in range(len(manager.dialog_data['oldest'])):
-        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['oldest'][i]["Title"])) 
+        manager.find(f"pub_{i}").text = Const(str(i + 1) + ". " + str(manager.dialog_data['oldest'][i]["Title"])) 
     manager.dialog_data['active_array'] = manager.dialog_data['oldest']  
 
 
@@ -549,7 +550,7 @@ async def sort_by_most_cited(callback: CallbackQuery, button: Button, manager: D
     manager.dialog_data['active_array'] = manager.dialog_data['most_cited']
 
     for i in range(len(manager.dialog_data['most_cited'])):
-        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['most_cited'][i]["Title"]))  
+        manager.find(f"pub_{i}").text = Const(str(i + 1) + ". " + str(manager.dialog_data['most_cited'][i]["Title"]))  
     manager.dialog_data['active_array'] = manager.dialog_data['most_cited'] 
 
 
