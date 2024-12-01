@@ -6,6 +6,7 @@ import io
 import os
 import re
 import math
+import shutil
 import asyncio
 import DrissionPage
 
@@ -570,11 +571,14 @@ async def search_for_author_cred(query: dict, folder_id: str, flag, future, sear
     first_name = ""
     last_name = ""
     orcid = ""
+    keywords = ""
     text_query = query["query"]
     query_list = text_query.split(" ")
-    if len(text_query.split(" ")) > 1:
+    if search_type == "full_name":
         last_name = query_list[0]
         first_name = query_list[1]
+    elif search_type == "keywords":
+        keywords = query["query"]
     else:
         orcid = query["query"]
 
@@ -594,15 +598,24 @@ async def search_for_author_cred(query: dict, folder_id: str, flag, future, sear
         await authorization_scopus(browser=browser, ac=ac)
         await asyncio.sleep(2)
         try:
-            browser.ele('xpath://*[@id="author"]', timeout=4).click()
+            if search_type == "keywords":
+                browser.ele('xpath://*[@id="researcher-discovery"]', timeout=4).click()
+            else:
+                browser.ele('xpath://*[@id="author"]', timeout=4).click()
         except:
             pass
+
         await asyncio.sleep(2)
+
         if orcid:
             browser.ele('xpath://*[@id="scopus-author-search-form"]/div[1]/ul[1]/li/label/select').click()
             browser.ele('xpath://*[@id="scopus-author-search-form"]/div[1]/ul[1]/li/label/select/option[2]').click()
             await asyncio.sleep(2)
             browser.ele('xpath://*[@id="scopus-author-search-form"]/div[2]/div/label/input').input(orcid)
+
+        elif keywords:
+            browser.ele('xpath://*[@id="researcher-discovery-panel"]/div/div/div/div[2]/div/div[1]/div[2]/div/form/div/div/div/label/input').input(keywords)
+
         else:
             try:
                 browser.ele('xpath://*[@id="scopus-author-search-form"]/div[2]/div[2]/div/label/input').input(first_name)
@@ -618,27 +631,42 @@ async def search_for_author_cred(query: dict, folder_id: str, flag, future, sear
                     browser.ele('xpath://*[@id="scopus-author-search-form-experimental"]/div[2]/div[1]/div/label/input').input(last_name)
                 except:
                     pass
-        try:
-            browser.ele('xpath://*[@id="scopus-author-search-form"]/div[3]/div[2]/button').click()
-        except:
+
+        if not keywords:
             try:
-                browser.ele('xpath://*[@id="scopus-author-search-form-experimental"]/div[3]/div[2]/button').click()
+                browser.ele('xpath://*[@id="scopus-author-search-form"]/div[3]/div[2]/button').click()
             except:
-                pass
+                try:
+                    browser.ele('xpath://*[@id="scopus-author-search-form-experimental"]/div[3]/div[2]/button').click()
+                except:
+                    pass
+        else:
+            try:
+                browser.ele('xpath://*[@id="researcher-discovery-panel"]/div/div/div/div[2]/div/div[1]/div[2]/div/form/div/div/div/div/button').click()
+            except:
+                try:
+                    browser.ele('xpath://*[@id="researcher-discovery-panel-experimental"]/div/div/div/div[2]/div/div[1]/div[2]/div/form/div/div/div/div/button').click()
+                except:
+                    pass
+
         await asyncio.sleep(2)
         
-        browser.ele('xpath://*[@id="resultsPerPage-button"]/span[1]').click()
-        browser.ele('xpath://*[@id="ui-id-14"]').click()
+        if not keywords:
+            browser.ele('xpath://*[@id="resultsPerPage-button"]/span[1]').click()
+            browser.ele('xpath://*[@id="ui-id-14"]').click()
 
-        await asyncio.sleep(2)        
+            await asyncio.sleep(2)        
 
-        # Извлечение таблицы и начальная настройка
-        
-        auths_num = browser.ele('xpath://*[@id="authorResultsOptionBar"]/div/div/header/h1/span').text
+            # Извлечение таблицы и начальная настройка
+            
+            auths_num = browser.ele('xpath://*[@id="authorResultsOptionBar"]/div/div/header/h1/span').text
+        else:
+            auths_num = 0
+
         result = []  # Массив для хранения результатов
         i = 0
         result.append(auths_num)
-        if search_type != "orcid":
+        if search_type == "full_name":
             for j in range(1, 13):
                 try:
                     browser.ele('xpath://*[@id="navLoad-button"]').click()
@@ -703,6 +731,44 @@ async def search_for_author_cred(query: dict, folder_id: str, flag, future, sear
                         i += 1
                 except:
                     pass
+        elif search_type == "keywords":
+            await asyncio.sleep(4)
+
+            for i in range(1, 9):
+                await asyncio.sleep(1)
+                browser.ele(f'xpath://*[@id="container"]/micro-ui/scopus-people-finder/div/div[2]/div[2]/div[3]/div[2]/section[2]/div[1]/ul[2]/li[2]/label/select/option[{i}]').click()
+                browser.ele('xpath://*[@id="container"]/micro-ui/scopus-people-finder/div/div[2]/div[2]/div[3]/div[2]/section[2]/div[1]/ul[1]/li/button').click()
+            
+            await asyncio.sleep(4)
+
+            files_path = "scopus_files/" + str(folder_id)
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            parent_dir = os.path.dirname(current_dir)
+            folder_path = os.path.join(parent_dir, files_path)
+            files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+            files_sorted = sorted(files, key=os.path.getctime)
+
+            for file_name in files_sorted:
+                if file_name.endswith('.csv'):
+                    file_path = os.path.join(folder_path, file_name)
+
+                    data = pd.read_csv(file_path)
+
+                    subset = data.iloc[:50]
+
+                    file_dict = {
+                        i: {
+                            'AuthorID': row['Scopus Author ID'],
+                            'Author': row['Name'],
+                            'Affiliation': row['Latest Affilation'],
+                            'Documents': row['Number of matching documents'],
+                        }
+                        for i, row in subset.iterrows()
+                    }
+
+                result.append(file_dict)
+            shutil.rmtree(folder_path)  # Удаляем всю папку
+            os.makedirs(folder_path)
         else:
             elem = browser.ele('xpath://*[@id="srchResultsList"]')
             html_content = elem.html
@@ -809,7 +875,8 @@ async def get_author_info(author_id: str, folder_id: str, browser, flag, future)
             pass
 
         res.append(author_info)
-
+        await asyncio.sleep(2)
+        
         csv = await export_auth_docs(browser=browser, doc_type="csv")
         await asyncio.sleep(2)
 

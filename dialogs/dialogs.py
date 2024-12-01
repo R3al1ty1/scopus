@@ -29,9 +29,12 @@ class FSMFindAuth(StatesGroup):
     name_or_orcid = State()
     orcid = State()
     full_name = State()
+    keywords = State()
     validate = State()
     check_auths = State()
+    check_auths_key = State()
     auth_info = State()
+    
 
 class FSMFindPubs(StatesGroup):
     choose_language = State()         # Состояние ожидания выбора языка
@@ -75,6 +78,9 @@ async def dialog_authors(dialog_manager: DialogManager, **kwargs):
     elif dialog_manager.find("orcid").is_checked():
         author_search_type = "ORCID"
         query = "orcid_search"
+    else:
+        author_search_type = "Ключевые слова"
+        query = "keywords_auth_search"
 
 
     return {
@@ -155,6 +161,7 @@ async def author_search_type(event, widget, manager: DialogManager, *args, **kwa
     checkboxes = [
         manager.dialog().find("full_name"),
         manager.dialog().find("orcid"),
+        manager.dialog().find("keywords_auth"),
     ]
 
     for checkbox in checkboxes:
@@ -166,6 +173,7 @@ async def author_search_type(event, widget, manager: DialogManager, *args, **kwa
     selected_search = {
         "full_name": "full_name",
         "orcid": "orcid",
+        "keywords_auth": "keywords",
     }.get(selected_id, "full_name")
 
     await manager.update(data={"selected_type": selected_search})
@@ -181,6 +189,8 @@ async def set_not_pressed_author(callback: CallbackQuery, button: Button, manage
         await manager.switch_to(FSMFindAuth.full_name)
     elif selected_type == "orcid":
         await manager.switch_to(FSMFindAuth.orcid)
+    else:
+        await manager.switch_to(FSMFindAuth.keywords)
 
 
 async def final_auth_dialog(event, source, manager: DialogManager, *args, **kwargs):
@@ -197,6 +207,8 @@ async def next_and_set_not_pressed(callback: CallbackQuery, button: Button, mana
         await manager.switch_to(FSMFindAuth.full_name)
     elif selected_type == "orcid":
         await manager.switch_to(FSMFindAuth.orcid)
+    else:
+        await manager.switch_to(FSMFindAuth.keywords)
 
     await manager.next()
 
@@ -257,51 +269,77 @@ async def start_search_pubs(callback: CallbackQuery, button: Button, manager: Di
 
 
 async def start_search_auth(callback: CallbackQuery, button: Button, manager: DialogManager):
-    manager.dialog_data['doc_count_max'] = None
-    manager.dialog_data['active_array'] = None
-    manager.dialog_data['folder_id'] = uuid.uuid4()
-    manager.dialog_data['pressed'] = True
-    #callback.message.chat.id
+    try:
+        manager.dialog_data['doc_count_max'] = None
+        manager.dialog_data['active_array'] = None
+        manager.dialog_data['folder_id'] = uuid.uuid4()
+        manager.dialog_data['pressed'] = True
+        #callback.message.chat.id
 
-    await callback.message.answer("Отлично! Теперь, пожалуйста, подождите. Наш бот уже выполняет ваш запрос. Это займет немного времени. ⏳")
+        await callback.message.answer("Отлично! Теперь, пожалуйста, подождите. Наш бот уже выполняет ваш запрос. Это займет немного времени. ⏳")
 
-    flag = asyncio.Event()
-    future = asyncio.Future()
-    manager.dialog_data['future'] = future
-    asyncio.create_task(search_for_author_cred(await dialog_authors(manager), manager.dialog_data['folder_id'], flag, future, manager.dialog_data["selected_type"]))
-    await flag.wait()
-    flag.clear()
-    manager.dialog_data['flag'] = flag
-    result = future.result()
-    manager.dialog_data['browser'] = result[-1]
-    for i in range(50):
-        manager.find(str(i)).text = Const("-")
-    if result[0]:
+        flag = asyncio.Event()
+        future = asyncio.Future()
+        manager.dialog_data['future'] = future
+        asyncio.create_task(search_for_author_cred(await dialog_authors(manager), manager.dialog_data['folder_id'], flag, future, manager.dialog_data["selected_type"]))
+        await flag.wait()
+        flag.clear()
+        manager.dialog_data['flag'] = flag
+        result = future.result()
+        manager.dialog_data['browser'] = result[-1]
+        for i in range(50):
+            manager.find(str(i)).text = Const("-")
+        if result[0] or manager.dialog_data.get("selected_type") == "keywords":
 
-        manager.dialog_data['doc_count_max'] = result[1]
-        manager.dialog_data['active_array'] = result[1]
+            if manager.dialog_data.get("selected_type") == "orcid":
+                manager.dialog_data['doc_count_max'] = result[1]
+                manager.dialog_data['active_array'] = result[1]
+                await process_auth_click(callback=callback, button=button, manager=manager)
+                await manager.done()
 
-        if manager.dialog_data.get("selected_type") == "orcid":
-            await process_auth_click(callback=callback, button=button, manager=manager)
-            await manager.done()
+            elif manager.dialog_data.get("selected_type") == "full_name":
+                manager.dialog_data['doc_count_max'] = result[1]
+                manager.dialog_data['active_array'] = result[1]
+                manager.dialog_data['doc_count_low'] = result[2]
+                manager.dialog_data['hindex_max'] = result[3]
+                manager.dialog_data['hindex_low'] = result[4]
+                manager.dialog_data['author_a'] = result[5]
+                manager.dialog_data['author_z'] = result[6]
+                manager.dialog_data['affil_a'] = result[7]
+                manager.dialog_data['affil_z'] = result[8]
+                manager.dialog_data['city_a'] = result[9]
+                manager.dialog_data['city_z'] = result[10]
+                manager.dialog_data['country_a'] = result[11]
+                manager.dialog_data['country_z'] = result[12]
+
+                for i in range(len(result[1])):
+                    manager.find(str(i)).text = Const(str(i + 1) + ". " + str(result[1][i]["Author"]) + " | " + str(result[1][i]["Documents"]) + " | " + str(result[1][i]["Affiliation"]))
+                await manager.switch_to(state=FSMFindAuth.check_auths, show_mode=ShowMode.SEND)
+                # await manager.update()
+
+            elif manager.dialog_data.get("selected_type") == "keywords":
+                try:
+                    manager.dialog_data['match_doc_max'] = result[1]
+                    manager.dialog_data['active_array'] = result[1]
+                    manager.dialog_data['match_doc_low'] = result[2]
+                    manager.dialog_data['high_cite'] = result[3]
+                    manager.dialog_data['low_cite'] = result[4]
+                    manager.dialog_data['total_doc_max'] = result[5]
+                    manager.dialog_data['total_doc_low'] = result[6]
+                    manager.dialog_data['hindex_max_key'] = result[7]
+                    manager.dialog_data['hindex_low_key'] = result[8]
+                    for i in range(len(result[1])):
+                        manager.find(f"key_{i}").text = Const(str(i + 1) + ". " + str(result[1][i]["Author"]) + " | " + str(result[1][i]["Documents"]) + " | " + str(result[1][i]["Affiliation"]))
+                    await manager.switch_to(state=FSMFindAuth.check_auths_key, show_mode=ShowMode.SEND)
+                    # await manager.update()
+                except:
+                    traceback.print_exc()
+
+
         else:
-            manager.dialog_data['doc_count_low'] = result[2]
-            manager.dialog_data['hindex_max'] = result[3]
-            manager.dialog_data['hindex_low'] = result[4]
-            manager.dialog_data['author_a'] = result[5]
-            manager.dialog_data['author_z'] = result[6]
-            manager.dialog_data['affil_a'] = result[7]
-            manager.dialog_data['affil_z'] = result[8]
-            manager.dialog_data['city_a'] = result[9]
-            manager.dialog_data['city_z'] = result[10]
-            manager.dialog_data['country_a'] = result[11]
-            manager.dialog_data['country_z'] = result[12]
-
-            for i in range(len(result[1])):
-                manager.find(str(i)).text = Const(str(i + 1) + ". " + str(result[1][i]["Author"]) + " | " + str(result[1][i]["Documents"]) + " | " + str(result[1][i]["Affiliation"]))
-            await manager.switch_to(state=FSMFindAuth.check_auths, show_mode=ShowMode.SEND)
-
-    else:
+            await callback.message.answer(text="По Вашему запросу не было найдено ни одного автора.\n\nСпасибо, что воспользовались нашим ботом! 🎉\n\nЧтобы искать снова, напишите команду /search")
+            await manager.done()
+    except:
         await callback.message.answer(text="По Вашему запросу не было найдено ни одного автора.\n\nСпасибо, что воспользовались нашим ботом! 🎉\n\nЧтобы искать снова, напишите команду /search")
         await manager.done()
 
@@ -347,6 +385,11 @@ def pub_buttons_create():
 
 def auth_buttons_create():
     buttons = [Button(Const('-'), id=str(i), on_click=process_auth_click, when=~F["pressed_new"]) for i in range(50)]
+    return buttons
+
+
+def auth_buttons_create_key():
+    buttons = [Button(Const('-'), id=f"key_{i}", on_click=process_auth_click, when=~F["pressed_new"]) for i in range(50)]
     return buttons
 
 
@@ -771,6 +814,142 @@ async def sort_by_country_z(callback: CallbackQuery, button: Button, manager: Di
     manager.dialog_data['active_array'] = manager.dialog_data['country_z']
 
 
+async def sort_by_match_doc_max(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("match_doc_max").text = Const("🔘 Match Docs (max)")
+    manager.find("match_doc_low").text = Const("⚪️ Match Docs (low)")
+    manager.find("high_cite").text = Const("⚪️ Total Citations (max)")
+    manager.find("low_cite").text = Const("⚪️ Total Citations (low)")
+    manager.find("total_doc_max").text = Const("⚪️ Total Docs (max)")
+    manager.find("total_doc_low").text = Const("⚪️ Total citations (low)")
+    manager.find("hindex_max_key").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low_key").text = Const("⚪️ H-index (low)")
+
+    manager.dialog_data['active_array'] = manager.dialog_data['match_doc_max']
+
+    for i in range(len(manager.dialog_data['match_doc_max'])):
+        manager.find(f"key_{i}").text = Const(str(i + 1) + ". " + str(manager.dialog_data['match_doc_max'][i]["Author"]) + " | " + str(manager.dialog_data['match_doc_max'][i]["Documents"]) + " | " + str(manager.dialog_data['match_doc_max'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['match_doc_max']
+
+
+async def sort_by_match_doc_low(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("match_doc_max").text = Const("⚪️ Match Docs (max)")
+    manager.find("match_doc_low").text = Const("🔘 Match Docs (low)")
+    manager.find("high_cite").text = Const("⚪️ Total Citations (max)")
+    manager.find("low_cite").text = Const("⚪️ Total Citations (low)")
+    manager.find("total_doc_max").text = Const("⚪️ Total Docs (max)")
+    manager.find("total_doc_low").text = Const("⚪️ Total citations (low)")
+    manager.find("hindex_max_key").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low_key").text = Const("⚪️ H-index (low)")
+
+    manager.dialog_data['active_array'] = manager.dialog_data['match_doc_max']
+
+    for i in range(len(manager.dialog_data['match_doc_low'])):
+        manager.find(f"key_{i}").text = Const(str(i + 1) + ". " + str(manager.dialog_data['match_doc_low'][i]["Author"]) + " | " + str(manager.dialog_data['match_doc_low'][i]["Documents"]) + " | " + str(manager.dialog_data['match_doc_low'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['match_doc_low']
+
+
+async def sort_by_high_cite(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("match_doc_max").text = Const("⚪️ Match Docs (max)")
+    manager.find("match_doc_low").text = Const("⚪️ Match Docs (low)")
+    manager.find("high_cite").text = Const("🔘 Total Citations (max)")
+    manager.find("low_cite").text = Const("⚪️ Total Citations (low)")
+    manager.find("total_doc_max").text = Const("⚪️ Total Docs (max)")
+    manager.find("total_doc_low").text = Const("⚪️ Total citations (low)")
+    manager.find("hindex_max_key").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low_key").text = Const("⚪️ H-index (low)")
+
+    manager.dialog_data['active_array'] = manager.dialog_data['match_doc_max']
+
+    for i in range(len(manager.dialog_data['high_cite'])):
+        manager.find(f"key_{i}").text = Const(str(i + 1) + ". " + str(manager.dialog_data['high_cite'][i]["Author"]) + " | " + str(manager.dialog_data['high_cite'][i]["Documents"]) + " | " + str(manager.dialog_data['high_cite'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['high_cite']
+
+
+async def sort_by_low_cite(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("match_doc_max").text = Const("⚪️ Match Docs (max)")
+    manager.find("match_doc_low").text = Const("⚪️ Match Docs (low)")
+    manager.find("high_cite").text = Const("⚪️ Total Citations (max)")
+    manager.find("low_cite").text = Const("🔘 Total Citations (low)")
+    manager.find("total_doc_max").text = Const("⚪️ Total Docs (max)")
+    manager.find("total_doc_low").text = Const("⚪️ Total citations (low)")
+    manager.find("hindex_max_key").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low_key").text = Const("⚪️ H-index (low)")
+
+    manager.dialog_data['active_array'] = manager.dialog_data['match_doc_max']
+
+    for i in range(len(manager.dialog_data['low_cite'])):
+        manager.find(f"key_{i}").text = Const(str(i + 1) + ". " + str(manager.dialog_data['low_cite'][i]["Author"]) + " | " + str(manager.dialog_data['low_cite'][i]["Documents"]) + " | " + str(manager.dialog_data['low_cite'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['low_cite']
+
+
+async def sort_by_total_doc_max(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("match_doc_max").text = Const("⚪️ Match Docs (max)")
+    manager.find("match_doc_low").text = Const("⚪️ Match Docs (low)")
+    manager.find("high_cite").text = Const("⚪️ Total Citations (max)")
+    manager.find("low_cite").text = Const("⚪️ Total Citations (low)")
+    manager.find("total_doc_max").text = Const("🔘 Total Docs (max)")
+    manager.find("total_doc_low").text = Const("⚪️ Total citations (low)")
+    manager.find("hindex_max_key").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low_key").text = Const("⚪️ H-index (low)")
+
+    manager.dialog_data['active_array'] = manager.dialog_data['match_doc_max']
+
+    for i in range(len(manager.dialog_data['total_doc_max'])):
+        manager.find(f"key_{i}").text = Const(str(i + 1) + ". " + str(manager.dialog_data['total_doc_max'][i]["Author"]) + " | " + str(manager.dialog_data['total_doc_max'][i]["Documents"]) + " | " + str(manager.dialog_data['total_doc_max'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['total_doc_max']
+
+
+async def sort_by_total_doc_low(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("match_doc_max").text = Const("⚪️ Match Docs (max)")
+    manager.find("match_doc_low").text = Const("⚪️ Match Docs (low)")
+    manager.find("high_cite").text = Const("⚪️ Total Citations (max)")
+    manager.find("low_cite").text = Const("⚪️ Total Citations (low)")
+    manager.find("total_doc_max").text = Const("⚪️ Total Docs (max)")
+    manager.find("total_doc_low").text = Const("🔘 Total citations (low)")
+    manager.find("hindex_max_key").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low_key").text = Const("⚪️ H-index (low)")
+
+    manager.dialog_data['active_array'] = manager.dialog_data['match_doc_max']
+
+    for i in range(len(manager.dialog_data['total_doc_low'])):
+        manager.find(f"key_{i}").text = Const(str(i + 1) + ". " + str(manager.dialog_data['total_doc_low'][i]["Author"]) + " | " + str(manager.dialog_data['total_doc_low'][i]["Documents"]) + " | " + str(manager.dialog_data['total_doc_low'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['total_doc_low']
+
+
+async def sort_by_hindex_max(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("match_doc_max").text = Const("⚪️ Match Docs (max)")
+    manager.find("match_doc_low").text = Const("⚪️ Match Docs (low)")
+    manager.find("high_cite").text = Const("⚪️ Total Citations (max)")
+    manager.find("low_cite").text = Const("⚪️ Total Citations (low)")
+    manager.find("total_doc_max").text = Const("⚪️ Total Docs (max)")
+    manager.find("total_doc_low").text = Const("⚪️ Total citations (low)")
+    manager.find("hindex_max_key").text = Const("🔘 H-index (max)")
+    manager.find("hindex_low_key").text = Const("⚪️ H-index (low)")
+
+    manager.dialog_data['active_array'] = manager.dialog_data['match_doc_max']
+
+    for i in range(len(manager.dialog_data['hindex_max_key'])):
+        manager.find(f"key_{i}").text = Const(str(i + 1) + ". " + str(manager.dialog_data['hindex_max_key'][i]["Author"]) + " | " + str(manager.dialog_data['hindex_max_key'][i]["Documents"]) + " | " + str(manager.dialog_data['hindex_max_key'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['hindex_max_key']
+
+
+async def sort_by_hindex_low(callback: CallbackQuery, button: Button, manager: DialogManager):
+    manager.find("match_doc_max").text = Const("⚪️ Match Docs (max)")
+    manager.find("match_doc_low").text = Const("⚪️ Match Docs (low)")
+    manager.find("high_cite").text = Const("⚪️ Total Citations (max)")
+    manager.find("low_cite").text = Const("⚪️ Total Citations (low)")
+    manager.find("total_doc_max").text = Const("⚪️ Total Docs (max)")
+    manager.find("total_doc_low").text = Const("⚪️ Total citations (low)")
+    manager.find("hindex_max_key").text = Const("⚪️ H-index (max)")
+    manager.find("hindex_low_key").text = Const("🔘 H-index (low)")
+
+    manager.dialog_data['active_array'] = manager.dialog_data['match_doc_max']
+
+    for i in range(len(manager.dialog_data['hindex_low_key'])):
+        manager.find(f"key_{i}").text = Const(str(i + 1) + ". " + str(manager.dialog_data['hindex_low_key'][i]["Author"]) + " | " + str(manager.dialog_data['hindex_low_key'][i]["Documents"]) + " | " + str(manager.dialog_data['hindex_low_key'][i]["Affiliation"]))
+    manager.dialog_data['active_array'] = manager.dialog_data['hindex_low_key']
+
+
 main_menu = Dialog(
     Window(
         Const(
@@ -967,6 +1146,15 @@ author_search_dialog = Dialog(
                 on_click=author_search_type,
             ),
         ),
+        Row(
+            Checkbox(
+                Const("☑️ Keywords"),
+                Const("⬜ Keywords"),
+                id="keywords_auth",
+                default=False,  # so it will be checked by default,
+                on_click=author_search_type,
+            ),
+        ),
         Button(text=Const("Дальше"), id="save", on_click=set_not_pressed_author),
         state=FSMFindAuth.name_or_orcid,
     ),
@@ -985,6 +1173,14 @@ author_search_dialog = Dialog(
             on_success=final_auth_dialog,
         ),
         state=FSMFindAuth.orcid,
+    ),
+    Window(
+        Const("Пожалуйста, введите Keywords. 🔍"),
+        TextInput(
+            id="keywords_auth_search",
+            on_success=final_auth_dialog,
+        ),
+        state=FSMFindAuth.keywords,
     ),
     Window(
         Format(
@@ -1034,4 +1230,34 @@ author_search_dialog = Dialog(
         state=FSMFindAuth.check_auths,
         #getter=auths_found
     ),
+    Window(
+        Row (
+            Button(text=Const("🔘 Match Docs (max)"), id="match_doc_max", on_click=sort_by_match_doc_max),
+            Button(text=Const("⚪️ Match Docs (low)"), id="match_doc_low", on_click=sort_by_match_doc_low),
+        ),
+        Row(
+            Button(text=Const("⚪️ Total Citations (max)"), id="high_cite", on_click=sort_by_high_cite),
+            Button(text=Const("⚪️ Total Citations (low)"), id="low_cite", on_click=sort_by_low_cite),
+        ),
+        Row(
+            Button(text=Const("⚪️ Total Docs (max)"), id="total_doc_max", on_click=sort_by_total_doc_max),
+            Button(text=Const("⚪️ Total Docs (low)"), id="total_doc_low", on_click=sort_by_total_doc_low),
+        ),
+        Row(
+            Button(text=Const("⚪️ H-index (max)"), id="hindex_max_key", on_click=sort_by_hindex_max),
+            Button(text=Const("⚪️ H-index (low)"), id="hindex_low_key", on_click=sort_by_hindex_low),
+        ),
+        Format("🔍 По вашему запросу найдены авторы\n\n📋 Рейтинг соответствующих:\n\nФамилия, имя | Количество документов | Учреждение"),
+        ScrollingGroup(
+            *auth_buttons_create_key(),
+            id="numbers_key",
+            width=1,
+            height=8,
+        ),
+        #Button(text=Const("Скачать файл со всеми статьями 👑"), id="download", on_click=download_file, when=~F["pressed_new"]),
+        #Button(text=Const("Не скачивать файл"), id="do_not_download", on_click=do_not_download_file, when=~F["pressed_new"]),
+        state=FSMFindAuth.check_auths_key,
+        #getter=auths_found
+    ),
+    
 )
