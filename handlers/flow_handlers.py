@@ -4,7 +4,7 @@ from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import default_state, State, StatesGroup
 from aiogram_dialog import DialogManager, StartMode
-from database.requests import charge_request, new_user
+from database.requests import new_user, enough_requests
 
 from dialogs import dialogs
 from handlers.service_handlers import process_payments_command
@@ -21,8 +21,8 @@ async def process_search_command(message: Message, state: FSMContext, dialog_man
     chat_id = str(message.chat.id)
     username = str(message.chat.username)
     new_user(chat_id, username)
-    if charge_request(chat_id=chat_id):
-        await dialog_manager.start(dialogs.SearchType.choose_search, mode=StartMode.RESET_STACK)
+    if enough_requests(chat_id=chat_id):
+        await dialog_manager.start(dialogs.FSMGeneral.choose_search, mode=StartMode.RESET_STACK)
     else:
         await message.answer("К сожалению, на вашем балансе закончились запросы.\nПриобретите их сейчас👇🏼")
         await process_payments_command(message)
@@ -34,8 +34,8 @@ async def process_search_button(callback: CallbackQuery, state: FSMContext, dial
     chat_id = str(callback.message.chat.id)
     username = str(callback.message.chat.username)
     new_user(chat_id, username)
-    if charge_request(chat_id=chat_id):
-        await dialog_manager.start(dialogs.SearchType.choose_search, mode=StartMode.RESET_STACK)
+    if enough_requests(chat_id=chat_id):
+        await dialog_manager.start(dialogs.FSMGeneral.choose_search, mode=StartMode.RESET_STACK)
     else:
         await callback.message.answer("К сожалению, на вашем балансе закончились запросы.\nПриобретите их сейчас👇🏼")
         await process_payments_command(callback.message)

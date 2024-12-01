@@ -21,28 +21,24 @@ from handlers.service_handlers import process_payments_command
 from utils.const import PROJECT_DIR
 
 
-class SearchType(StatesGroup):
+class FSMGeneral(StatesGroup):
     choose_search = State()
-
-
-class FSMFindAuth(StatesGroup):
     name_or_orcid = State()
     orcid = State()
     full_name = State()
     keywords = State()
-    validate = State()
     check_auths = State()
     check_auths_key = State()
+    validate_auth = State()
     auth_info = State()
-    
 
-class FSMFindPubs(StatesGroup):
+
     choose_language = State()         # Состояние ожидания выбора языка
     choose_years = State()            # Состояние ожидания ввода годов
     choose_document_type = State()    # Состояние ожидания выбора типов документа
     choose_filter_type = State()
     filling_query = State()           # Состояние написания запроса
-    validate = State()                # Валидация введенных данных
+    validate_pubs = State()                # Валидация введенных данных
     check_pubs = State()              # Просмотр 50 статей
 
 
@@ -146,13 +142,18 @@ async def on_checkbox_search(event, widget, manager: DialogManager):
 
 async def choose_search_type(callback: CallbackQuery, button: Button, manager: DialogManager):
     search_type = manager.dialog_data.get("search_type", None)
+
     if search_type == "article":
         manager.dialog_data["search_type"] = ""
-        await manager.start(FSMFindPubs.choose_language)  # Use start() to enter a different state group
+        # await manager.done()
+        await manager.start(FSMGeneral.choose_language)  # Use start() to enter a different state group
+        #await manager.switch_to(FSMGeneral.choose_language)
         
     elif search_type == "author":
         manager.dialog_data["search_type"] = ""
-        await manager.start(FSMFindAuth.name_or_orcid)
+        # await manager.done()
+        await manager.start(FSMGeneral.name_or_orcid)
+        #await manager.switch_to(FSMGeneral.name_or_orcid)
 
 
 async def author_search_type(event, widget, manager: DialogManager, *args, **kwargs):
@@ -186,29 +187,29 @@ async def set_not_pressed_author(callback: CallbackQuery, button: Button, manage
     
     # Переходим к состояниям в зависимости от выбранного типа
     if selected_type == "full_name":
-        await manager.switch_to(FSMFindAuth.full_name)
+        await manager.switch_to(FSMGeneral.full_name)
     elif selected_type == "orcid":
-        await manager.switch_to(FSMFindAuth.orcid)
+        await manager.switch_to(FSMGeneral.orcid)
     else:
-        await manager.switch_to(FSMFindAuth.keywords)
+        await manager.switch_to(FSMGeneral.keywords)
 
 
 async def final_auth_dialog(event, source, manager: DialogManager, *args, **kwargs):
-    await manager.switch_to(FSMFindAuth.validate)
+    await manager.switch_to(FSMGeneral.validate_auth)
 
 
 async def next_and_set_not_pressed(callback: CallbackQuery, button: Button, manager: DialogManager):
     manager.dialog_data['pressed'] = False
     manager.dialog_data['pressed_new'] = False
-    selected_type = manager.dialog_data.get("selected_type")
+    # selected_type = manager.dialog_data.get("selected_type")
     
-    # Переходим к состояниям в зависимости от выбранного типа
-    if selected_type == "full_name":
-        await manager.switch_to(FSMFindAuth.full_name)
-    elif selected_type == "orcid":
-        await manager.switch_to(FSMFindAuth.orcid)
-    else:
-        await manager.switch_to(FSMFindAuth.keywords)
+    # # Переходим к состояниям в зависимости от выбранного типа
+    # if selected_type == "full_name":
+    #     await manager.switch_to(FSMGeneral.full_name)
+    # elif selected_type == "orcid":
+    #     await manager.switch_to(FSMGeneral.orcid)
+    # else:
+    #     await manager.switch_to(FSMGeneral.keywords)
 
     await manager.next()
 
@@ -233,10 +234,11 @@ def check_years(text):
 
 
 async def go_to_beginning(callback: CallbackQuery, button: Button, manager: DialogManager):
-    await manager.switch_to(FSMFindAuth.name_or_orcid)  
+    await manager.switch_to(FSMGeneral.name_or_orcid)  
 
 
 async def start_search_pubs(callback: CallbackQuery, button: Button, manager: DialogManager):
+    await charge_request(str(callback.message.chat.id))
     manager.dialog_data['folder_id'] = uuid.uuid4()
     manager.dialog_data['pressed'] = True
 
@@ -261,7 +263,7 @@ async def start_search_pubs(callback: CallbackQuery, button: Button, manager: Di
         for i in range(len(result[2])):
             print(manager.find(str(i)).text, manager.find(str(i)))
             manager.find(str(i)).text = Const(str(i + 1) + ". " + str(result[2][i]["Title"]))
-        await manager.switch_to(state=FSMFindPubs.check_pubs, show_mode=ShowMode.SEND)
+        await manager.switch_to(state=FSMGeneral.check_pubs, show_mode=ShowMode.SEND)
 
     else:
         await callback.message.answer(text="По Вашему запросу не было найдено ни одной статьи.\n\nСпасибо, что воспользовались нашим ботом! 🎉\n\nЧтобы искать снова, напишите команду /search")
@@ -270,13 +272,14 @@ async def start_search_pubs(callback: CallbackQuery, button: Button, manager: Di
 
 async def start_search_auth(callback: CallbackQuery, button: Button, manager: DialogManager):
     try:
+        await charge_request(str(callback.message.chat.id))
         manager.dialog_data['doc_count_max'] = None
         manager.dialog_data['active_array'] = None
         manager.dialog_data['folder_id'] = uuid.uuid4()
         manager.dialog_data['pressed'] = True
         #callback.message.chat.id
 
-        await callback.message.answer("Отлично! Теперь, пожалуйста, подождите. Наш бот уже выполняет ваш запрос. Это займет немного времени. ⏳")
+        await callback.message.answer("Отлично! Теперь, пожалуйста, подождите. Наш бот уже выполняет ваш запрос. Это займет от 30 до 90 секунд. ⏳")
 
         flag = asyncio.Event()
         future = asyncio.Future()
@@ -314,7 +317,7 @@ async def start_search_auth(callback: CallbackQuery, button: Button, manager: Di
 
                 for i in range(len(result[1])):
                     manager.find(str(i)).text = Const(str(i + 1) + ". " + str(result[1][i]["Author"]) + " | " + str(result[1][i]["Documents"]) + " | " + str(result[1][i]["Affiliation"]))
-                await manager.switch_to(state=FSMFindAuth.check_auths, show_mode=ShowMode.SEND)
+                await manager.switch_to(state=FSMGeneral.check_auths, show_mode=ShowMode.SEND)
                 # await manager.update()
 
             elif manager.dialog_data.get("selected_type") == "keywords":
@@ -330,7 +333,7 @@ async def start_search_auth(callback: CallbackQuery, button: Button, manager: Di
                     manager.dialog_data['hindex_low_key'] = result[8]
                     for i in range(len(result[1])):
                         manager.find(f"key_{i}").text = Const(str(i + 1) + ". " + str(result[1][i]["Author"]) + " | " + str(result[1][i]["Documents"]) + " | " + str(result[1][i]["Affiliation"]))
-                    await manager.switch_to(state=FSMFindAuth.check_auths_key, show_mode=ShowMode.SEND)
+                    await manager.switch_to(state=FSMGeneral.check_auths_key, show_mode=ShowMode.SEND)
                     # await manager.update()
                 except:
                     traceback.print_exc()
@@ -375,7 +378,7 @@ async def process_pub_click(callback: CallbackQuery, button: Button, manager: Di
         """, 4096)
         for j in range(len(list_to_print)):
             await callback.message.answer(list_to_print[j], parse_mode='Markdown')
-        await manager.switch_to(state=FSMFindPubs.check_pubs)
+        await manager.switch_to(state=FSMGeneral.check_pubs)
 
 
 def pub_buttons_create():
@@ -957,46 +960,43 @@ main_menu = Dialog(
         ),
         Row(
             Checkbox(
-                Const("☑️ Статья"),
-                Const("⬜ Статья"),
+                Const("☑️ 📄 Статья"),
+                Const("⬜ 📄 Статья"),
                 id="article",
                 default=False,
                 on_click=on_checkbox_search,
             ),
             Checkbox(
-                Const("☑️ Автор"),
-                Const("⬜ Автор"),
+                Const("☑️ 👤 Автор"),
+                Const("⬜ 👤 Автор"),
                 id="author",
                 default=False,
                 on_click=on_checkbox_search,
             )
         ),
-        Button(text=Const("Дальше"), id="save", on_click=choose_search_type),
-        state=SearchType.choose_search
+        Button(text=Const("➡️ Дальше"), id="save", on_click=choose_search_type),
+        state=FSMGeneral.choose_search
     ),
-)
-
-authors_search_dialog = Dialog(
     Window(
         Const(
-            "Выберите, если нужно, языки для фильтрации публикаций."
+            "Выберите, если нужно, языки для фильтрации публикаций. 🌐"
         ),
         Row(
             Checkbox(
-                Const("☑️ Русский🇷🇺"),
-                Const("⬜ Русский🇷🇺"),
+                Const("☑️ 🇷🇺 Русский"),
+                Const("⬜ 🇷🇺 Русский"),
                 id="ru",
                 default=False,  # so it will be checked by default,
             ),
             Checkbox(
-                Const("☑️ Английский🇬🇧"),
-                Const("⬜ Английский🇬🇧"),
+                Const("☑️ 🇬🇧 Английский"),
+                Const("⬜ 🇬🇧 Английский"),
                 id="eng",
                 default=False,  # so it will be checked by default,
             ),
         ),
-        Button(text=Const("Дальше"), id="save", on_click=next_and_set_not_pressed),
-        state=FSMFindPubs.choose_language,
+        Button(text=Const("➡️ Дальше"), id="save", on_click=next_and_set_not_pressed),
+        state=FSMGeneral.choose_language,
     ),
     Window(
         Const(
@@ -1008,7 +1008,7 @@ authors_search_dialog = Dialog(
             on_success=Next(),
             type_factory=check_years,
         ),
-        state=FSMFindPubs.choose_years,
+        state=FSMGeneral.choose_years,
     ),
     Window(
         Const(
@@ -1036,8 +1036,8 @@ authors_search_dialog = Dialog(
                 default=False,  # so it will be checked by default,
             ),
         ),
-        Button(text=Const("Дальше"), id="save", on_click=Next()),
-        state=FSMFindPubs.choose_document_type,
+        Button(text=Const("➡️ Дальше"), id="save", on_click=Next()),
+        state=FSMGeneral.choose_document_type,
     ),
     Window(
         Const(
@@ -1075,8 +1075,8 @@ authors_search_dialog = Dialog(
                 on_click=on_checkbox_click_pubs,
             ),
         ),
-        Button(text=Const("Дальше"), id="save", on_click=Next()),
-        state=FSMFindPubs.choose_filter_type,
+        Button(text=Const("➡️ Дальше"), id="save", on_click=Next()),
+        state=FSMGeneral.choose_filter_type,
     ),
     Window(
         Const("Пожалуйста, введите сам поисковый запрос. 🔍"),
@@ -1084,7 +1084,7 @@ authors_search_dialog = Dialog(
             id="query",
             on_success=Next(),
         ),
-        state=FSMFindPubs.filling_query,
+        state=FSMGeneral.filling_query,
     ),
     Window(
         Format(
@@ -1102,7 +1102,7 @@ authors_search_dialog = Dialog(
     """),
         Button(text=Const("🔁 Заново"), id="again", on_click=go_to_beginning, when=~F["pressed"]),
         Button(text=Const("▶️ Поиск"), id="search", on_click=start_search_pubs, when=~F["pressed"]),
-        state=FSMFindPubs.validate,
+        state=FSMGeneral.validate_pubs,
         getter=dialog_get_data  # here we specify data getter for dialog
     ),
     Window(
@@ -1120,27 +1120,24 @@ authors_search_dialog = Dialog(
         ),
         Button(text=Const("Скачать файл со всеми статьями 👑"), id="download", on_click=download_file, when=~F["pressed_new"]),
         #Button(text=Const("Не скачивать файл"), id="do_not_download", on_click=do_not_download_file, when=~F["pressed_new"]),
-        state=FSMFindPubs.check_pubs,
+        state=FSMGeneral.check_pubs,
         getter=pubs_found
     ),
-)
-
-author_search_dialog = Dialog(
     Window(
         Const(
             "Выберите тип поиска: по имени или по ORCID. 🔍"
         ),
         Row(
             Checkbox(
-                Const("☑️ Фамилия, имя"),
-                Const("⬜ Фамилия, имя"),
+                Const("☑️ 👤 Фамилия, имя"),
+                Const("⬜ 👤 Фамилия, имя"),
                 id="full_name",
                 default=False,  # so it will be checked by default,
                 on_click=author_search_type,
             ),
             Checkbox(
-                Const("☑️ ORCID"),
-                Const("⬜ ORCID"),
+                Const("☑️ 🆔 ORCID"),
+                Const("⬜ 🆔 ORCID"),
                 id="orcid",
                 default=False,  # so it will be checked by default,
                 on_click=author_search_type,
@@ -1148,15 +1145,15 @@ author_search_dialog = Dialog(
         ),
         Row(
             Checkbox(
-                Const("☑️ Keywords"),
-                Const("⬜ Keywords"),
+                Const("☑️ 🔑 Keywords"),
+                Const("⬜ 🔑 Keywords"),
                 id="keywords_auth",
                 default=False,  # so it will be checked by default,
                 on_click=author_search_type,
             ),
         ),
-        Button(text=Const("Дальше"), id="save", on_click=set_not_pressed_author),
-        state=FSMFindAuth.name_or_orcid,
+        Button(text=Const("➡️ Дальше"), id="save", on_click=set_not_pressed_author),
+        state=FSMGeneral.name_or_orcid,
     ),
     Window(
         Const("Пожалуйста, введите фамилию и имя через пробел. 🔍"),
@@ -1164,7 +1161,7 @@ author_search_dialog = Dialog(
             id="name_search",
             on_success=final_auth_dialog,
         ),
-        state=FSMFindAuth.full_name,
+        state=FSMGeneral.full_name,
     ),
     Window(
         Const("Пожалуйста, введите ORCID. 🔍"),
@@ -1172,7 +1169,7 @@ author_search_dialog = Dialog(
             id="orcid_search",
             on_success=final_auth_dialog,
         ),
-        state=FSMFindAuth.orcid,
+        state=FSMGeneral.orcid,
     ),
     Window(
         Const("Пожалуйста, введите Keywords. 🔍"),
@@ -1180,7 +1177,7 @@ author_search_dialog = Dialog(
             id="keywords_auth_search",
             on_success=final_auth_dialog,
         ),
-        state=FSMFindAuth.keywords,
+        state=FSMGeneral.keywords,
     ),
     Window(
         Format(
@@ -1192,7 +1189,7 @@ author_search_dialog = Dialog(
     """),
         Button(text=Const("🔁 Заново"), id="again", on_click=go_to_beginning, when=~F["pressed"]),
         Button(text=Const("▶️ Поиск"), id="search", on_click=start_search_auth, when=~F["pressed"]),
-        state=FSMFindAuth.validate,
+        state=FSMGeneral.validate_auth,
         getter=dialog_authors  # here we specify data getter for dialog
     ),
     Window(
@@ -1227,7 +1224,7 @@ author_search_dialog = Dialog(
         ),
         #Button(text=Const("Скачать файл со всеми статьями 👑"), id="download", on_click=download_file, when=~F["pressed_new"]),
         #Button(text=Const("Не скачивать файл"), id="do_not_download", on_click=do_not_download_file, when=~F["pressed_new"]),
-        state=FSMFindAuth.check_auths,
+        state=FSMGeneral.check_auths,
         #getter=auths_found
     ),
     Window(
@@ -1256,7 +1253,7 @@ author_search_dialog = Dialog(
         ),
         #Button(text=Const("Скачать файл со всеми статьями 👑"), id="download", on_click=download_file, when=~F["pressed_new"]),
         #Button(text=Const("Не скачивать файл"), id="do_not_download", on_click=do_not_download_file, when=~F["pressed_new"]),
-        state=FSMFindAuth.check_auths_key,
+        state=FSMGeneral.check_auths_key,
         #getter=auths_found
     ),
     

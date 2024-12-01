@@ -20,8 +20,6 @@ async def main() -> None:
         dp.include_router(service_handlers.router)
         dp.include_router(flow_handlers.router)
         dp.include_router(dialogs.main_menu)
-        dp.include_router(dialogs.authors_search_dialog)
-        dp.include_router(dialogs.author_search_dialog)
 
         # Настраиваем диалоги
         setup_dialogs(dp)

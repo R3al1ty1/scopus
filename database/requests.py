@@ -36,7 +36,7 @@ def new_user(chat_id, username):
 
     session.close()
 
-def charge_request(chat_id):
+async def charge_request(chat_id):
     """Списание одного запроса у пользователя."""
     session = Session()
     chat = session.query(Chat).filter_by(chat_id=chat_id).first()
@@ -48,16 +48,10 @@ def charge_request(chat_id):
     days_diff = now - start_time
 
     if days_diff.days > 7:
-        if chat.requests == 0:
-            return False
         
         chat.requests -= 1
         session.commit()
-        session.close()
-
-        return True
-    else:
-        return True
+    session.close()
 
 
 def add_requests(chat_id, num):
@@ -83,3 +77,24 @@ def get_requests(chat_id):
     session.close()
 
     return num
+
+
+def enough_requests(chat_id):
+    session = Session()
+    chat = session.query(Chat).filter_by(chat_id=chat_id).first()
+
+    db_time = chat.trial_start
+    date_format = "%Y-%m-%d %H:%M:%S"  # Указываем формат, соответствующий строке
+    start_time = datetime.strptime(db_time, date_format)
+    now = datetime.now()
+    days_diff = now - start_time
+
+    if days_diff.days > 7:
+        if chat.requests == 0:
+            return False
+
+        session.close()
+
+        return True
+    else:
+        return True
