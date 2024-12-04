@@ -667,7 +667,7 @@ async def search_for_author_cred(query: dict, folder_id: str, flag, future, sear
         i = 0
         result.append(auths_num)
         if search_type == "full_name":
-            for j in range(1, 13):
+            for j in range(1, 9):
                 try:
                     browser.ele('xpath://*[@id="navLoad-button"]').click()
                     browser.ele(f'xpath://*[@id="navLoad-menu"]/li[{j}]').click()

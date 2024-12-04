@@ -43,7 +43,7 @@ class FSMGeneral(StatesGroup):
 
 
 async def dialog_get_data(dialog_manager: DialogManager, **kwargs):
-    filter_type = "Title-abstract-keywords"
+    filter_type = "-"
 
     if dialog_manager.find("title").is_checked():
         filter_type = "Title"
@@ -234,7 +234,7 @@ def check_years(text):
 
 
 async def go_to_beginning(callback: CallbackQuery, button: Button, manager: DialogManager):
-    await manager.switch_to(FSMGeneral.name_or_orcid)  
+    await manager.switch_to(FSMGeneral.choose_search)  
 
 
 async def start_search_pubs(callback: CallbackQuery, button: Button, manager: DialogManager):
@@ -311,10 +311,6 @@ async def start_search_auth(callback: CallbackQuery, button: Button, manager: Di
                 manager.dialog_data['author_z'] = result[6]
                 manager.dialog_data['affil_a'] = result[7]
                 manager.dialog_data['affil_z'] = result[8]
-                manager.dialog_data['city_a'] = result[9]
-                manager.dialog_data['city_z'] = result[10]
-                manager.dialog_data['country_a'] = result[11]
-                manager.dialog_data['country_z'] = result[12]
 
                 for i in range(len(result[1])):
                     manager.find(str(i)).text = Const(str(i + 1) + ". " + str(result[1][i]["Author"]) + " | " + str(result[1][i]["Documents"]) + " | " + str(result[1][i]["Affiliation"]))
@@ -479,7 +475,10 @@ async def process_auth_click(callback: CallbackQuery, button: Button, manager: D
 
         output_message += "👥 Соавторы:\n\n"
         for co_author in co_authors:
-            output_message += f"- ORCID:  {co_author['id']},   Имя:  {co_author['name']},   Документы:  {co_author['documents']}\n"
+            if co_author['id'] != "-":
+                output_message += f"- Имя:  {co_author['name']},   Документы:  {co_author['documents']},  ORCID:  {co_author['id']}\n"
+            else:
+                output_message += f"- Имя:  {co_author['name']},   Документы:  {co_author['documents']}\n"
 
         await callback.message.answer(output_message)
         await callback.message.answer("Спасибо, что воспользовались нашим ботом! 🎉\nЧтобы начать новый поиск, напишите команду /search")
@@ -564,10 +563,6 @@ async def sort_by_doc_count_max(callback: CallbackQuery, button: Button, manager
     manager.find("author_z").text = Const("⚪️ Author (Z-A)")
     manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
     manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
-    manager.find("city_a").text = Const("⚪️ City (A-Z)")
-    manager.find("city_z").text = Const("⚪️ City (Z-A)")
-    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
-    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
 
 
     manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
@@ -586,10 +581,7 @@ async def sort_by_doc_count_low(callback: CallbackQuery, button: Button, manager
     manager.find("author_z").text = Const("⚪️ Author (Z-A)")
     manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
     manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
-    manager.find("city_a").text = Const("⚪️ City (A-Z)")
-    manager.find("city_z").text = Const("⚪️ City (Z-A)")
-    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
-    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+    
 
 
     manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
@@ -608,10 +600,7 @@ async def sort_by_h_index_max(callback: CallbackQuery, button: Button, manager: 
     manager.find("author_z").text = Const("⚪️ Author (Z-A)")
     manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
     manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
-    manager.find("city_a").text = Const("⚪️ City (A-Z)")
-    manager.find("city_z").text = Const("⚪️ City (Z-A)")
-    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
-    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+    
 
 
     manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
@@ -630,10 +619,7 @@ async def sort_by_h_index_low(callback: CallbackQuery, button: Button, manager: 
     manager.find("author_z").text = Const("⚪️ Author (Z-A)")
     manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
     manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
-    manager.find("city_a").text = Const("⚪️ City (A-Z)")
-    manager.find("city_z").text = Const("⚪️ City (Z-A)")
-    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
-    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+    
 
 
     manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
@@ -652,10 +638,7 @@ async def sort_by_author_a(callback: CallbackQuery, button: Button, manager: Dia
     manager.find("author_z").text = Const("⚪️ Author (Z-A)")
     manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
     manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
-    manager.find("city_a").text = Const("⚪️ City (A-Z)")
-    manager.find("city_z").text = Const("⚪️ City (Z-A)")
-    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
-    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+    
 
 
     manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
@@ -674,10 +657,7 @@ async def sort_by_author_z(callback: CallbackQuery, button: Button, manager: Dia
     manager.find("author_z").text = Const("🔘 Author (Z-A)")
     manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
     manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
-    manager.find("city_a").text = Const("⚪️ City (A-Z)")
-    manager.find("city_z").text = Const("⚪️ City (Z-A)")
-    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
-    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+    
 
 
     manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
@@ -696,10 +676,7 @@ async def sort_by_affil_a(callback: CallbackQuery, button: Button, manager: Dial
     manager.find("author_z").text = Const("⚪️ Author (Z-A)")
     manager.find("affil_a").text = Const("🔘 Affiliation (A-Z)")
     manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
-    manager.find("city_a").text = Const("⚪️ City (A-Z)")
-    manager.find("city_z").text = Const("⚪️ City (Z-A)")
-    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
-    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+    
 
 
     manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
@@ -718,10 +695,7 @@ async def sort_by_affil_z(callback: CallbackQuery, button: Button, manager: Dial
     manager.find("author_z").text = Const("⚪️ Author (Z-A)")
     manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
     manager.find("affil_z").text = Const("🔘 Affiliation (Z-A)")
-    manager.find("city_a").text = Const("⚪️ City (A-Z)")
-    manager.find("city_z").text = Const("⚪️ City (Z-A)")
-    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
-    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
+    
 
 
     manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
@@ -729,94 +703,6 @@ async def sort_by_affil_z(callback: CallbackQuery, button: Button, manager: Dial
     for i in range(len(manager.dialog_data['affil_z'])):
         manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['affil_z'][i]["Author"]) + " | " + str(manager.dialog_data['affil_z'][i]["Documents"]) + " | " + str(manager.dialog_data['affil_z'][i]["Affiliation"]))
     manager.dialog_data['active_array'] = manager.dialog_data['affil_z']
-
-
-async def sort_by_city_a(callback: CallbackQuery, button: Button, manager: DialogManager):
-    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
-    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
-    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
-    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
-    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
-    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
-    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
-    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
-    manager.find("city_a").text = Const("🔘 City (A-Z)")
-    manager.find("city_z").text = Const("⚪️ City (Z-A)")
-    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
-    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
-
-
-    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
-
-    for i in range(len(manager.dialog_data['city_a'])):
-        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['city_a'][i]["Author"]) + " | " + str(manager.dialog_data['city_a'][i]["Documents"]) + " | " + str(manager.dialog_data['city_a'][i]["Affiliation"]))
-    manager.dialog_data['active_array'] = manager.dialog_data['city_a']
-
-
-async def sort_by_city_z(callback: CallbackQuery, button: Button, manager: DialogManager):
-    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
-    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
-    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
-    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
-    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
-    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
-    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
-    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
-    manager.find("city_a").text = Const("⚪️ City (A-Z)")
-    manager.find("city_z").text = Const("🔘 City (Z-A)")
-    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
-    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
-
-
-    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
-
-    for i in range(len(manager.dialog_data['city_z'])):
-        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['city_z'][i]["Author"]) + " | " + str(manager.dialog_data['city_z'][i]["Documents"]) + " | " + str(manager.dialog_data['city_z'][i]["Affiliation"]))
-    manager.dialog_data['active_array'] = manager.dialog_data['city_z']
-
-
-async def sort_by_country_a(callback: CallbackQuery, button: Button, manager: DialogManager):
-    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
-    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
-    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
-    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
-    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
-    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
-    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
-    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
-    manager.find("city_a").text = Const("⚪️ City (A-Z)")
-    manager.find("city_z").text = Const("⚪️ City (Z-A)")
-    manager.find("country_a").text = Const("🔘 Country (A-Z)")
-    manager.find("country_z").text = Const("⚪️ Country (Z-A)")
-
-
-    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
-
-    for i in range(len(manager.dialog_data['country_a'])):
-        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['country_a'][i]["Author"]) + " | " + str(manager.dialog_data['country_a'][i]["Documents"]) + " | " + str(manager.dialog_data['country_a'][i]["Affiliation"]))
-    manager.dialog_data['active_array'] = manager.dialog_data['country_a']
-
-
-async def sort_by_country_z(callback: CallbackQuery, button: Button, manager: DialogManager):
-    manager.find("doc_count_max").text = Const("⚪️ Doc Count (max)")
-    manager.find("doc_count_low").text = Const("⚪️ Doc Count (low)")
-    manager.find("hindex_max").text = Const("⚪️ H-index (max)")
-    manager.find("hindex_low").text = Const("⚪️ H-index (low)")
-    manager.find("author_a").text = Const("⚪️ Author (A-Z)")
-    manager.find("author_z").text = Const("⚪️ Author (Z-A)")
-    manager.find("affil_a").text = Const("⚪️ Affiliation (A-Z)")
-    manager.find("affil_z").text = Const("⚪️ Affiliation (Z-A)")
-    manager.find("city_a").text = Const("⚪️ City (A-Z)")
-    manager.find("city_z").text = Const("⚪️ City (Z-A)")
-    manager.find("country_a").text = Const("⚪️ Country (A-Z)")
-    manager.find("country_z").text = Const("🔘 Country (Z-A)")
-
-
-    manager.dialog_data['active_array'] = manager.dialog_data['doc_count_max']
-
-    for i in range(len(manager.dialog_data['country_z'])):
-        manager.find(str(i)).text = Const(str(i + 1) + ". " + str(manager.dialog_data['country_z'][i]["Author"]) + " | " + str(manager.dialog_data['country_z'][i]["Documents"]) + " | " + str(manager.dialog_data['country_z'][i]["Affiliation"]))
-    manager.dialog_data['active_array'] = manager.dialog_data['country_z']
 
 
 async def sort_by_match_doc_max(callback: CallbackQuery, button: Button, manager: DialogManager):
@@ -1210,12 +1096,6 @@ main_menu = Dialog(
         Row(
             Button(text=Const("⚪️ Affiliation (A-Z)"), id="affil_a", on_click=sort_by_affil_a),
             Button(text=Const("⚪️ Affiliation (Z-A)"), id="affil_z", on_click=sort_by_affil_z),
-        ),
-        Row(
-            Button(text=Const("⚪️ City (A-Z)"), id="city_a", on_click=sort_by_city_a),
-            Button(text=Const("⚪️ City (Z-A)"), id="city_z", on_click=sort_by_city_z),
-            Button(text=Const("⚪️ Country (A-Z)"), id="country_a", on_click=sort_by_country_a),
-            Button(text=Const("⚪️ Country (Z-A)"), id="country_z", on_click=sort_by_country_z)
         ),
         Format("🔍 По вашему запросу найдены авторы\n\n📋 Рейтинг соответствующих:\n\nФамилия, имя | Количество документов | Учреждение"),
         ScrollingGroup(
