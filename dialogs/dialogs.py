@@ -353,26 +353,27 @@ def chunkstring(string, length):
 
 
 async def process_pub_click(callback: CallbackQuery, button: Button, manager: DialogManager):
-    if int(callback.data) < len(manager.dialog_data['active_array']):
+    ind = int(callback.data.split("_")[-1])
+    if ind < len(manager.dialog_data['active_array']):
         list_to_print = chunkstring(f"""
-        {int(callback.data) + 1}
+        {ind + 1}
 *Название*    
-        {manager.dialog_data['active_array'][int(callback.data)]['Title'].replace('_', '-').replace('*', '✵')}
+        {manager.dialog_data['active_array'][ind]['Title'].replace('_', '-').replace('*', '✵')}
 
 *Абстракт*
-        {manager.dialog_data['active_array'][int(callback.data)]['Abstract'].replace('_', '-').replace('*', '✵')}
+        {manager.dialog_data['active_array'][ind]['Abstract'].replace('_', '-').replace('*', '✵')}
 
 *Авторы*
-        {manager.dialog_data['active_array'][int(callback.data)]['Authors'].replace('_', '-').replace('*', '✵')}
+        {manager.dialog_data['active_array'][ind]['Authors'].replace('_', '-').replace('*', '✵')}
 
 *Источник*
-        {manager.dialog_data['active_array'][int(callback.data)]['Source'].replace('_', '-').replace('*', '✵')}
+        {manager.dialog_data['active_array'][ind]['Source'].replace('_', '-').replace('*', '✵')}
 
 *Год*
-        {manager.dialog_data['active_array'][int(callback.data)]['Year'].replace('_', '-').replace('*', '✵')}
+        {manager.dialog_data['active_array'][ind]['Year'].replace('_', '-').replace('*', '✵')}
 
 *Кол-во цитированиий*
-        {manager.dialog_data['active_array'][int(callback.data)]['Citations'].replace('_', '-').replace('*', '✵')  }
+        {manager.dialog_data['active_array'][ind]['Citations'].replace('_', '-').replace('*', '✵')  }
 
 \nЧтобы виджет с выбором статей опустился вниз диалога, отправьте любое сообщение. ⬇️
 
