@@ -37,7 +37,11 @@ async def process_help_command(message: Message):
 /search   - поиск
 /payments - пополнение баланса
 /support  - связь с поддержкой
-/balance  - баланс"""
+/balance  - баланс
+
+Краткий гайд по использованию бота:
+https://telegra.ph/Kak-ispolzovat-ScopusRuBot-12-04
+"""
     )
 
 
