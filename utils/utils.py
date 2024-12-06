@@ -186,8 +186,12 @@ async def set_prefs(folder_id):
     co.set_pref("download.prompt_for_download", False)
     co.set_pref("directory_upgrade", True)
     co.set_pref("safebrowsing.enabled", True)
+    co.set_pref(arg='profile.default_content_settings.popups', value='0')
+    co.set_pref(arg='profile.managed_default_content_settings.popups', value='0')
     co.set_pref("profile.default_content_setting_values.automatic_downloads", 1)
     co.set_argument('--start-maximized')
+    co.set_argument("--disable-notifications")
+    co.set_argument("--disable-popup-blocking")
     
     port = await generate_port()
     used_ports.append(port)
@@ -195,6 +199,7 @@ async def set_prefs(folder_id):
     co.set_local_port(port)
     
     return co
+
 
 async def authorization_scopus(browser, ac):
     """Авторизация Scopus."""
@@ -876,7 +881,11 @@ async def get_author_info(author_id: str, folder_id: str, browser, flag, future)
 
         res.append(author_info)
         await asyncio.sleep(2)
-        
+        browser.run_js("""
+            window.addEventListener('beforeunload', function(event) {
+                event.stopImmediatePropagation();
+            });
+        """)
         csv = await export_auth_docs(browser=browser, doc_type="csv")
         await asyncio.sleep(2)
 
@@ -885,6 +894,7 @@ async def get_author_info(author_id: str, folder_id: str, browser, flag, future)
         """
         Делаем соавторов
         """
+        await downloads_done(folder_id=folder_id)
         try:
             browser.ele('xpath://*[@id="co-authors"]').click()
             await asyncio.sleep(1.5)
