@@ -1,10 +1,9 @@
 import os
+import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from database.models import Chat
 from dotenv import load_dotenv
-from telegram import Bot
-import asyncio
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -29,24 +28,33 @@ MESSAGE = """🎉 Поздравляем всех с наступившим 2025
 
 🙏 Спасибо за ваше понимание!"""
 
-# Инициализация бота
-bot = Bot(token=BOT_TOKEN)
+# URL для отправки сообщений через Telegram API
+BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-async def send_mail(chat_ids: list):
-    for user_id in chat_ids:
-        user_id = user_id[0]  # Извлекаем `chat_id` из кортежа
-        try:
-            await bot.send_message(chat_id=user_id, text=MESSAGE)  # Используем await
-            print(f"Сообщение отправлено пользователю {user_id}")
-        except Exception as e:
-            print(f"Ошибка при отправке пользователю {user_id}: {e}")
+def send_message(chat_id, text):
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+    try:
+        response = requests.post(BASE_URL, json=payload)
+        if response.status_code == 200:
+            print(f"Сообщение отправлено пользователю {chat_id}")
+        else:
+            print(f"Ошибка при отправке пользователю {chat_id}: {response.json()}")
+    except Exception as e:
+        print(f"Ошибка при отправке пользователю {chat_id}: {e}")
 
-async def main():
+def main():
     session = Session()
     chat_ids = session.query(Chat.chat_id).all()
     session.close()
     print(chat_ids)
-    await send_mail(chat_ids=chat_ids)  # Вызываем асинхронную функцию
+
+    for user_id in chat_ids:
+        user_id = user_id[0]
+        send_message(chat_id=user_id, text=MESSAGE)
 
 if __name__ == "__main__":
-    asyncio.run(main())  # Запускаем асинхронный код
+    main()
